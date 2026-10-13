@@ -6,7 +6,6 @@
     <Version>0.1.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <GamePath>/tmp/game</GamePath>
     <EnableModDeploy>false</EnableModDeploy>
     <EnableModZip>false</EnableModZip>
   </PropertyGroup>
