@@ -1,9 +1,16 @@
 {
   "Name": "Canopy Lighting",
   "Author": "Tanzi",
-  "Version": "0.2.0",
-  "Description": "Adds subtle time-dependent directional lighting to mature tree canopies.",
+  "Version": "0.3.0",
+  "Description": "Uses Dynamic Shader's compiled shader to add time-dependent lighting to oak and pine canopies.",
   "UniqueID": "Tanzi.CanopyLighting",
   "EntryDll": "CanopyLighting.dll",
-  "MinimumApiVersion": "4.0.0"
+  "MinimumApiVersion": "4.2.1",
+  "Dependencies": [
+    {
+      "UniqueID": "Nook.DynamicShader",
+      "IsRequired": true,
+      "MinimumVersion": "1.0.42"
+    }
+  ]
 }
