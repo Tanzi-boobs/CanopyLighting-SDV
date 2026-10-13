@@ -18,13 +18,13 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
-      - name: Prepare placeholder game folder
+      - name: Prepare placeholder game path
         run: |
           mkdir -p /tmp/stardew
           touch "/tmp/stardew/Stardew Valley.dll"
           echo '<Project><PropertyGroup><GamePath>/tmp/stardew</GamePath></PropertyGroup></Project>' > "$HOME/stardewvalley.targets"
 
-      - name: Build mod
+      - name: Build
         run: dotnet build CanopyLighting.csproj --configuration Release
 
       - name: Package
