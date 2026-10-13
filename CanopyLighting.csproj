@@ -8,6 +8,8 @@
     <Nullable>enable</Nullable>
     <EnableModDeploy>false</EnableModDeploy>
     <EnableModZip>false</EnableModZip>
+    <EnableModDeploy>false</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
