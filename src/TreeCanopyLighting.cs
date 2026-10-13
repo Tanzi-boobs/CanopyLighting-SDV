@@ -313,11 +313,11 @@ internal static class TreeCanopyLighting
         object sunDirection = Activator.CreateInstance(vectorType, new object[] { sunX, -0.55f })!;
         string technique = isOak ? "TreeCanopyLight" : "TextureGuidedPineCanopyLight";
         SetCurrentTechnique(technique);
+        SetEffectParameter("TreeCanopyLightSunDirection", sunDirection);
 
         float strength = Math.Clamp(_config.OverallStrength, 0f, 2f) * solar;
         if (isOak)
         {
-            SetEffectParameter("TreeCanopyLightSunDirection", sunDirection);
             SetVector4("TreeCanopyLightColor", 1.05f, 1.00f, 0.90f, 1f);
             SetVector4("TreeCanopyShadowColor", 0.78f, 0.84f, 0.92f, 1f);
             SetFloat("TreeCanopyLightStrength", Math.Clamp(_config.OakLightStrength, 0f, 5f) * strength);
