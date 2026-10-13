@@ -22,7 +22,13 @@ jobs:
         run: |
           mkdir -p /tmp/stardew
           touch "/tmp/stardew/Stardew Valley.dll"
-          echo '<Project><PropertyGroup><GamePath>/tmp/stardew</GamePath></PropertyGroup></Project>' > "$HOME/stardewvalley.targets"
+          cat > "$HOME/stardewvalley.targets" <<'EOF'
+          <Project>
+            <PropertyGroup>
+              <GamePath>/tmp/stardew</GamePath>
+            </PropertyGroup>
+          </Project>
+          EOF
 
       - name: Build
         run: dotnet build CanopyLighting.csproj --configuration Release
