@@ -1,8 +1,8 @@
 {
   "Name": "Canopy Lighting",
   "Author": "Tanzi",
-  "Version": "0.4.2",
-  "Description": "Standalone canopy-only lighting for mature wild trees; no additional ground shadows.",
+  "Version": "0.4.3",
+  "Description": "Standalone canopy-only lighting for mature wild trees, with GMCM settings and no added ground shadows.",
   "UniqueID": "Tanzi.CanopyLighting",
   "EntryDll": "CanopyLighting.dll",
   "MinimumApiVersion": "4.0.0"
