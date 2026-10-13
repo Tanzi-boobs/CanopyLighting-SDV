@@ -42,6 +42,9 @@ internal static class TreeCanopyLighting
     private static bool _effectInitializationAttempted;
     private static bool _runtimeDisabled;
     private static bool _loggedRuntimeFailure;
+    private static bool _loggedHookExecution;
+    private static bool _loggedMatureCandidate;
+    private static bool _loggedSuccessfulRender;
 
     public static void Install(ModConfig config, IMonitor monitor, string modDirectory)
     {
@@ -104,7 +107,7 @@ internal static class TreeCanopyLighting
             });
 
         if (drawMethod is null)
-            throw new InvalidOperationException("Couldn't find the two-argument Tree.draw method.");
+            throw new InvalidOperationException("Couldn't find the one-argument Tree.draw(SpriteBatch) method.");
 
         MethodInfo postfix = typeof(TreeCanopyLighting).GetMethod(
             nameof(OnTreeDrawPostfix),
@@ -114,13 +117,19 @@ internal static class TreeCanopyLighting
         _harmony = new Harmony(HarmonyId);
         _harmony.Patch(drawMethod, postfix: new HarmonyMethod(postfix));
 
-        monitor.Log("Standalone canopy shader loaded from this mod's own assets.", LogLevel.Info);
+        monitor.Log("Found bundled canopy shader asset and installed the Tree.draw hook.", LogLevel.Info);
     }
 
     private static void OnTreeDrawPostfix(object __instance, object[] __args)
     {
         if (_runtimeDisabled || _config is null || !_config.Enabled || _config.OverallStrength <= 0.001f)
             return;
+
+        if (!_loggedHookExecution)
+        {
+            _loggedHookExecution = true;
+            _monitor?.Log("Tree.draw hook is executing.", LogLevel.Trace);
+        }
 
         try
         {
@@ -138,6 +147,12 @@ internal static class TreeCanopyLighting
 
             string treeKind = Convert.ToString(ReadNetValue(__instance, _treeKind, "1")) ?? "1";
             bool isPine = treeKind == "3";
+
+            if (!_loggedMatureCandidate)
+            {
+                _loggedMatureCandidate = true;
+                _monitor?.Log($"Mature tree reached canopy pass (treeType={treeKind}, pine={isPine}).", LogLevel.Trace);
+            }
 
             // Use the pine silhouette for pine trees; use the broadleaf canopy profile
             // for every other mature vanilla/custom Wild Tree type. This covers maple,
@@ -246,6 +261,12 @@ internal static class TreeCanopyLighting
                 rotation,
                 origin,
                 effects);
+
+            if (!_loggedSuccessfulRender)
+            {
+                _loggedSuccessfulRender = true;
+                _monitor?.Log($"Canopy shader drew its first overlay at {time:0000} for treeType={treeKind}.", LogLevel.Info);
+            }
         }
         catch (Exception ex)
         {
@@ -342,9 +363,9 @@ internal static class TreeCanopyLighting
     {
         BatchState state = CaptureBatchState(batch);
 
-        // SpriteBatch doesn't consistently upload MatrixTransform for a custom Effect
-        // on MonoGame Android. Set it explicitly or the canopy pass can be invisible.
-        SetEffectParameter("MatrixTransform", state.TransformMatrix);
+        // A custom MonoGame Effect doesn't receive SpriteBatch's internal projection
+        // matrix automatically. Match SpriteEffect.OnApply: user transform * viewport projection.
+        SetEffectParameter("MatrixTransform", CreateEffectTransform(batch, state));
 
         dynamic spriteBatch = batch;
         bool batchOpen = true;
@@ -434,8 +455,10 @@ internal static class TreeCanopyLighting
         object rasterizer = ReadFirstField(batch, "_rasterizerState", "rasterizerState")
             ?? GetStaticMember("Microsoft.Xna.Framework.Graphics.RasterizerState", "CullCounterClockwise");
         object? effect = ReadFirstField(batch, "_customEffect", "_effect", "customEffect");
-        object transform = ReadFirstField(batch, "_transformMatrix", "transformMatrix")
-            ?? GetStaticMember("Microsoft.Xna.Framework.Matrix", "Identity");
+        object? spriteEffect = ReadFirstField(batch, "_spriteEffect", "spriteEffect");
+        object? transform = spriteEffect is null ? null : ReadMember(spriteEffect, "TransformMatrix");
+        transform ??= ReadFirstField(batch, "_transformMatrix", "transformMatrix");
+        transform ??= GetStaticMember("Microsoft.Xna.Framework.Matrix", "Identity");
 
         object? begun = ReadFirstField(batch, "_beginCalled", "beginCalled");
         if (begun is not null && !Convert.ToBoolean(begun))
@@ -451,6 +474,63 @@ internal static class TreeCanopyLighting
             Effect = effect,
             TransformMatrix = transform
         };
+    }
+
+    private static object CreateEffectTransform(object batch, BatchState state)
+    {
+        object? graphicsManager = _gameType is null ? null : ReadStaticMember(_gameType, "graphics");
+        object? graphicsDevice = graphicsManager is null ? null : ReadMember(graphicsManager, "GraphicsDevice");
+        object? viewport = graphicsDevice is null ? null : ReadMember(graphicsDevice, "Viewport");
+        if (viewport is null)
+            throw new InvalidOperationException("Couldn't read the GraphicsDevice viewport for the canopy shader.");
+
+        float width = ReadFloatMember(viewport, "Width");
+        float height = ReadFloatMember(viewport, "Height");
+        if (width <= 0f || height <= 0f)
+            throw new InvalidOperationException("The GraphicsDevice viewport has invalid dimensions.");
+
+        Type matrixType = AccessTools.TypeByName("Microsoft.Xna.Framework.Matrix")
+            ?? throw new InvalidOperationException("Couldn't find MonoGame's Matrix type.");
+        MethodInfo createProjection = matrixType
+            .GetMethods(BindingFlags.Static | BindingFlags.Public)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "CreateOrthographicOffCenter")
+                    return false;
+
+                ParameterInfo[] parameters = method.GetParameters();
+                return parameters.Length == 7
+                    && parameters.Take(6).All(parameter => parameter.ParameterType == typeof(float))
+                    && parameters[6].ParameterType == matrixType.MakeByRefType();
+            })
+            ?? throw new InvalidOperationException("Couldn't find Matrix.CreateOrthographicOffCenter.");
+
+        object?[] projectionArguments = { 0f, width, height, 0f, 0f, -1f, null };
+        createProjection.Invoke(null, projectionArguments);
+        object projection = projectionArguments[6]
+            ?? throw new InvalidOperationException("MonoGame failed to create the SpriteBatch projection matrix.");
+
+        // Match MonoGame SpriteEffect.OnApply for backends which require a half-pixel offset.
+        if (graphicsDevice is not null && ReadBooleanMember(graphicsDevice, "UseHalfPixelOffset", false))
+        {
+            FieldInfo? m41 = AccessTools.Field(matrixType, "M41");
+            FieldInfo? m42 = AccessTools.Field(matrixType, "M42");
+            if (m41 is not null)
+                m41.SetValue(projection, ReadFloatMember(projection, "M41") - 0.5f * ReadFloatMember(projection, "M11"));
+            if (m42 is not null)
+                m42.SetValue(projection, ReadFloatMember(projection, "M42") - 0.5f * ReadFloatMember(projection, "M22"));
+        }
+
+        MethodInfo multiply = matrixType.GetMethod(
+            "op_Multiply",
+            BindingFlags.Static | BindingFlags.Public,
+            binder: null,
+            types: new[] { matrixType, matrixType },
+            modifiers: null)
+            ?? throw new InvalidOperationException("Couldn't find Matrix multiplication for the SpriteBatch transform.");
+
+        return multiply.Invoke(null, new[] { state.TransformMatrix, projection })
+            ?? throw new InvalidOperationException("Couldn't combine the SpriteBatch transform and projection.");
     }
 
     private static void BeginRestoredBatch(dynamic spriteBatch, BatchState state)
