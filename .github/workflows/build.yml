@@ -30,6 +30,7 @@ jobs:
           mkdir -p artifact/CanopyLighting
           cp manifest.json artifact/CanopyLighting/
           cp bin/Release/net6.0/CanopyLighting.dll artifact/CanopyLighting/
+          cp config.json artifact/CanopyLighting/ 2>/dev/null || true
           cd artifact
           zip -r ../CanopyLighting.zip CanopyLighting
 
