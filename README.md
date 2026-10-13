@@ -1,17 +1,18 @@
 # Canopy Lighting
 
-A Stardew Valley 1.6 SMAPI mod that applies directional lighting to mature oak and pine canopies using a bundled MonoGame effect. Dynamic Shader is **not required**.
+A Stardew Valley 1.6 SMAPI mod that applies directional lighting directly to mature wild-tree canopies. Dynamic Shader is **not required**.
 
-## Standalone behavior
+## Behavior
 
 - Loads \`assets/shaders/ShadowEffect.mgfxo\` from this mod's own folder.
-- Uses the \`TreeCanopyLight\` technique for oak and \`TextureGuidedPineCanopyLight\` for pine.
-- Changes the sun direction and fades effect strength according to in-game time.
-- Includes independent oak/pine toggles and strength controls in \`config.json\`.
+- Uses the texture-guided pine technique for mature pine trees and the broadleaf canopy technique for every other mature \`Tree\` type, including oak, maple, mahogany, palm, mushroom and mystic trees.
+- Mirrors Stardew 1.6.15's selected canopy atlas cell for seed-ready, untouched and mossy variants.
+- Updates the sun direction over the in-game day and fades the lighting around dawn and dusk.
+- Renders only a canopy-lighting pass. It does not draw a ground shadow; the vanilla circular shadow under each tree is left unchanged.
 
 ## Install
 
-Extract the complete \`CanopyLighting\` folder to Stardew Valley's \`Mods\` folder. The folder must contain:
+Extract the complete \`CanopyLighting\` folder to \`Mods\`. It must contain:
 
 \`\`\`text
 CanopyLighting/
@@ -23,15 +24,19 @@ CanopyLighting/
         └── ShadowEffect.mgfxo
 \`\`\`
 
-The full private/personal-use package includes the compiled shader provided by the user. That binary is intentionally not committed to this public repository. Consequently, the public GitHub Actions workflow uploads a DLL-only validation artifact, not an installable ZIP.
+The personal-use ZIP includes the compiled shader supplied with the user's Dynamic Shader archive. That binary is intentionally not committed to this public repository. GitHub Actions therefore uploads a DLL-only validation artifact, not a complete installable ZIP.
 
 ## Configuration
 
 - \`Enabled\`: enables/disables Canopy Lighting.
 - \`OverallStrength\`: master multiplier from 0 to 2.
-- \`EnableOakCanopy\` and \`EnablePineCanopy\`: toggle each tree type.
-- \`OakLightStrength\`, \`OakShadowStrength\`, \`PineLightStrength\`, \`PineShadowStrength\`, \`PineRimStrength\`: individual effect strengths, clamped to 0–5.
+- \`EnableOakCanopy\`: toggles the broadleaf profile on all non-pine wild trees.
+- \`EnablePineCanopy\`: toggles the pine profile.
+- \`OakLightStrength\` / \`OakShadowStrength\`: broadleaf lighting/shading strengths.
+- \`PineLightStrength\` / \`PineShadowStrength\` / \`PineRimStrength\`: pine lighting/shading strengths.
 
-## Testing status
+Changing canopy shadow strength only affects pixels within the canopy shader. It does not add a ground shadow.
 
-CI verifies C# compilation using a compile-only SMAPI API shim; it does not validate live MonoGame rendering. After installing, test a mature oak and pine outdoors, then check camera movement, sprites walking behind the canopy, and the SMAPI log. The mod has not yet been verified in-game on Cinderbox Android.
+## Testing
+
+CI validates compilation using a compile-only SMAPI API shim; it cannot confirm live rendering. The user's latest SMAPI log showed the hook installing without a runtime shader error, but visual output still needs verification in Cinderbox. Test more than one mature tree type and confirm the vanilla ground shadow remains unchanged.
