@@ -45,6 +45,7 @@ internal static class TreeCanopyLighting
     private static bool _loggedHookExecution;
     private static bool _loggedMatureCandidate;
     private static bool _loggedSuccessfulRender;
+    private static int _diagnosticTreeSamples;
 
     internal static void UpdateConfig(ModConfig config)
     {
@@ -142,16 +143,28 @@ internal static class TreeCanopyLighting
                 return;
 
             object? location = _currentLocation.GetValue(null);
-            if (location is null || !ReadBooleanMember(location, "IsOutdoors", false))
-                return;
-
-            if (Convert.ToInt32(ReadNetValue(__instance, _growthStage, 0)) < 5)
-                return;
-            if (Convert.ToBoolean(ReadNetValue(__instance, _stump, false)))
-                return;
-
+            bool outdoors = location is not null && ReadBooleanMember(location, "IsOutdoors", false);
+            int growthStage = Convert.ToInt32(ReadNetValue(__instance, _growthStage, 0));
+            bool isStump = Convert.ToBoolean(ReadNetValue(__instance, _stump, false));
             string treeKind = Convert.ToString(ReadNetValue(__instance, _treeKind, "1")) ?? "1";
             bool isPine = treeKind == "3";
+
+            // The latest device log showed the hook running, but no mature-tree path.
+            // Log a few samples so the next run identifies which filter is blocking all trees.
+            if (_diagnosticTreeSamples < 12)
+            {
+                _diagnosticTreeSamples++;
+                _monitor?.Log(
+                    $"Tree draw sample #{_diagnosticTreeSamples}: location={location?.GetType().FullName ?? "null"}, outdoors={outdoors}, growthStage={growthStage}, treeType={treeKind}, stump={isStump}.",
+                    LogLevel.Trace);
+            }
+
+            if (!outdoors)
+                return;
+            if (growthStage < 5)
+                return;
+            if (isStump)
+                return;
 
             if (!_loggedMatureCandidate)
             {
