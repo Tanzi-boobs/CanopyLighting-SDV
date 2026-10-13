@@ -9,8 +9,8 @@ namespace CanopyLighting;
 
 /// <summary>
 /// Draws the standalone canopy shader technique at the same point in the world draw order
-/// as each vanilla tree. The shader is loaded from the user's DynamicShader installation;
-/// this mod deliberately does not redistribute the compiled shader asset.
+/// as each vanilla tree. The compiled effect is loaded from this mod's own assets;
+/// Dynamic Shader is not a runtime dependency.
 /// </summary>
 internal static class TreeCanopyLighting
 {
