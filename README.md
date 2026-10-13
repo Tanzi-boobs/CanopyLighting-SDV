@@ -1,19 +1,21 @@
 # CanopyLighting-SDV
 
-Standalone Stardew Valley 1.6 SMAPI mod project targeting canopy lighting.
+Standalone Stardew Valley 1.6 SMAPI mod project for a future canopy-lighting effect.
 
-## Build
-Push to `main` or run **Actions → Build Canopy Lighting → Run workflow**.
-Download the `CanopyLighting` artifact, extract it, and place the folder in
-`Stardew Valley/Mods`.
+## Build on GitHub
+Every push to `main` runs the **Build Canopy Lighting** workflow.
+Open **Actions → Build Canopy Lighting**, select a successful run, and download
+the `CanopyLighting` artifact. Extract it and place the `CanopyLighting`
+folder in the game's `Mods` directory.
 
 ## Current status
-This repository currently contains a buildable SMAPI scaffold, not a finished
-lighting effect. The entry point loads configuration and logs that canopy
-rendering is not implemented yet.
+The current build is a **loader/configuration scaffold only**. It checks the
+SMAPI entry point and config plumbing; it does not yet render canopy lighting.
+The CI build uses a compile-only SMAPI API shim, so a successful build is not
+proof of runtime compatibility. Test with Stardew Valley 1.6 and Cinderbox
+before treating this as a working mod.
 
-## Planned implementation
-Implement canopy-only lighting using a render-time mask for mature tree canopy
-pixels. Avoid broad green-pixel classification, which would incorrectly affect
-grass, NPC clothing, crops, and buildings. Test against Stardew Valley 1.6 and
-the user's Cinderbox Android environment before considering it usable.
+## Planned effect
+Add a canopy-specific mask and lighting pass for mature tree crowns. Avoid
+classifying all green pixels, which could unintentionally affect grass, NPC
+clothing, crops, and buildings.
