@@ -18,21 +18,8 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
-      - name: Prepare placeholder game and SMAPI references
-        shell: bash
-        run: |
-          mkdir -p /tmp/stardew
-          touch "/tmp/stardew/Stardew Valley.dll"
-          # Prevent ModBuildConfig from requiring a local installation of SMAPI.
-          # The project references the SMAPI API through a small compile-only reference assembly.
-          cat > "$HOME/stardewvalley.targets" <<'EOF'
-          <Project>
-            <PropertyGroup>
-              <GamePath>/tmp/stardew</GamePath>
-              <CopyToGameFolder>false</CopyToGameFolder>
-            </PropertyGroup>
-          </Project>
-          EOF
+      - name: Build compile-only SMAPI API shim
+        run: dotnet build ci/SmapiStub/SmapiStub.csproj --configuration Release
 
       - name: Build mod
         run: dotnet build CanopyLighting.csproj --configuration Release
