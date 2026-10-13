@@ -1,20 +1,23 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using HarmonyLib;
 using StardewModdingAPI;
 
 namespace CanopyLighting;
 
 /// <summary>
-/// Adds a restrained, time-dependent light gradient directly to mature tree crowns.
-/// The original tree texture is reused as the mask, so no rectangles are painted over
-/// the grass, trunk, buildings, or nearby sprites.
+/// Draws the Dynamic Shader canopy technique at the same point in the world draw order
+/// as each vanilla tree. The shader is loaded from the user's DynamicShader installation;
+/// this mod deliberately does not redistribute the compiled shader asset.
 /// </summary>
 internal static class TreeCanopyLighting
 {
     private const string HarmonyId = "Tanzi.CanopyLighting";
-    private const int Strips = 6;
+    private const int OakTreeType = 1;
+    private const int PineTreeType = 3;
     private static readonly BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
     private static ModConfig? _config;
@@ -26,21 +29,30 @@ internal static class TreeCanopyLighting
     private static FieldInfo? _texture;
     private static FieldInfo? _growthStage;
     private static FieldInfo? _treeKind;
-    private static FieldInfo? _hasSeed;
-    private static FieldInfo? _flipped;
     private static FieldInfo? _stump;
     private static FieldInfo? _alpha;
     private static FieldInfo? _shakeRotation;
     private static FieldInfo? _viewport;
     private static FieldInfo? _currentLocation;
     private static FieldInfo? _timeOfDay;
+
+    private static string? _shaderPath;
+    private static object? _effect;
+    private static bool _effectInitializationAttempted;
     private static bool _runtimeDisabled;
     private static bool _loggedRuntimeFailure;
 
-    public static void Install(ModConfig config, IMonitor monitor)
+    public static void Install(ModConfig config, IMonitor monitor, string modDirectory)
     {
         _config = config;
         _monitor = monitor;
+
+        _shaderPath = FindDynamicShaderEffect(modDirectory);
+        if (_shaderPath is null)
+        {
+            throw new FileNotFoundException(
+                "Couldn't find DynamicShader/assets/shaders/ShadowEffect.mgfxo. Install Dynamic Shader 1.0.42 or newer beside Canopy Lighting.");
+        }
 
         _treeType = AccessTools.TypeByName("StardewValley.TerrainFeatures.Tree")
             ?? throw new InvalidOperationException("Couldn't find StardewValley.TerrainFeatures.Tree.");
@@ -51,8 +63,6 @@ internal static class TreeCanopyLighting
         _texture = AccessTools.Field(_treeType, "texture");
         _growthStage = AccessTools.Field(_treeType, "growthStage");
         _treeKind = AccessTools.Field(_treeType, "treeType");
-        _hasSeed = AccessTools.Field(_treeType, "hasSeed");
-        _flipped = AccessTools.Field(_treeType, "flipped");
         _stump = AccessTools.Field(_treeType, "stump");
         _alpha = AccessTools.Field(_treeType, "alpha");
         _shakeRotation = AccessTools.Field(_treeType, "shakeRotation");
@@ -82,12 +92,73 @@ internal static class TreeCanopyLighting
 
         _harmony = new Harmony(HarmonyId);
         _harmony.Patch(drawMethod, postfix: new HarmonyMethod(postfix));
-        monitor.Log("Canopy lighting hook installed for mature tree crowns.", LogLevel.Info);
+
+        WarnIfBuiltInCanopyIsEnabled(_shaderPath, monitor);
+        monitor.Log("Canopy Lighting will use Dynamic Shader's compiled canopy techniques for oak and pine trees.", LogLevel.Info);
+    }
+
+    private static string? FindDynamicShaderEffect(string modDirectory)
+    {
+        string? modsDirectory = Directory.GetParent(Path.GetFullPath(modDirectory))?.FullName;
+        if (string.IsNullOrEmpty(modsDirectory) || !Directory.Exists(modsDirectory))
+            return null;
+
+        foreach (string folder in Directory.EnumerateDirectories(modsDirectory))
+        {
+            string manifestPath = Path.Combine(folder, "manifest.json");
+            if (!File.Exists(manifestPath))
+                continue;
+
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                if (!document.RootElement.TryGetProperty("UniqueID", out JsonElement uniqueId)
+                    || !string.Equals(uniqueId.GetString(), "Nook.DynamicShader", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string candidate = Path.Combine(folder, "assets", "shaders", "ShadowEffect.mgfxo");
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+            catch
+            {
+                // Ignore unrelated or malformed manifests while searching the Mods folder.
+            }
+        }
+
+        return null;
+    }
+
+    private static void WarnIfBuiltInCanopyIsEnabled(string shaderPath, IMonitor monitor)
+    {
+        try
+        {
+            string shaderDirectory = Path.GetDirectoryName(shaderPath)!;
+            string dynamicShaderDirectory = Path.GetFullPath(Path.Combine(shaderDirectory, "..", ".."));
+            string configPath = Path.Combine(dynamicShaderDirectory, "config.json");
+            if (!File.Exists(configPath))
+                return;
+
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(configPath));
+            JsonElement root = document.RootElement;
+            bool oakEnabled = root.TryGetProperty("EnableTreeCanopyLight", out JsonElement oak) && oak.ValueKind == JsonValueKind.True;
+            bool pineEnabled = root.TryGetProperty("EnablePineCanopyLight", out JsonElement pine) && pine.ValueKind == JsonValueKind.True;
+            if (oakEnabled || pineEnabled)
+            {
+                monitor.Log(
+                    "Dynamic Shader's built-in canopy feature is enabled too. Set EnableTreeCanopyLight and EnablePineCanopyLight to false in Dynamic Shader's config.json to prevent both mods drawing the canopy effect twice. Other Dynamic Shader features can remain enabled.",
+                    LogLevel.Warn);
+            }
+        }
+        catch (Exception ex)
+        {
+            monitor.Log("Couldn't inspect Dynamic Shader's canopy toggles: " + ex.Message, LogLevel.Debug);
+        }
     }
 
     private static void OnTreeDrawPostfix(object __instance, object[] __args)
     {
-        if (_runtimeDisabled || _config is null || !_config.Enabled || _config.Strength <= 0.001f)
+        if (_runtimeDisabled || _config is null || !_config.Enabled || _config.OverallStrength <= 0.001f)
             return;
 
         try
@@ -104,15 +175,32 @@ internal static class TreeCanopyLighting
             if (Convert.ToBoolean(ReadNetValue(__instance, _stump, false)))
                 return;
 
+            int treeKind = Convert.ToInt32(ReadNetValue(__instance, _treeKind, 0));
+            bool isOak = treeKind == OakTreeType;
+            bool isPine = treeKind == PineTreeType;
+            if ((!isOak || !_config.EnableOakCanopy) && (!isPine || !_config.EnablePineCanopy))
+                return;
+
             int time = Convert.ToInt32(_timeOfDay.GetValue(null) ?? 1200);
-            float solar = GetDaylightFactor(time / 100f);
-            if (solar <= 0.01f)
+            float hour = time / 100f;
+            float solar = GetDaylightFactor(hour);
+            if (solar <= 0.001f)
                 return;
 
             object? topRect = _treeTopSourceRect?.GetValue(__instance);
             object? lazyTexture = _texture?.GetValue(__instance);
-            object? texture = lazyTexture is null ? null : ReadMember(lazyTexture, "Value");
+            object? texture = lazyTexture is null ? null : ReadMember(lazyTexture, "Value") ?? lazyTexture;
             if (topRect is null || texture is null)
+                return;
+
+            float treeAlpha = ReadFloatField(__instance, _alpha, 1f);
+            // Avoid a full-opacity shader overlay while vanilla is fading a chopped or shaken tree.
+            if (treeAlpha < 0.98f)
+                return;
+
+            float rotation = ReadFloatField(__instance, _shakeRotation, 0f);
+            object? viewport = _viewport.GetValue(null);
+            if (viewport is null)
                 return;
 
             Type rectangleType = topRect.GetType();
@@ -126,24 +214,26 @@ internal static class TreeCanopyLighting
             int sourceY = ReadIntMember(topRect, "Y");
             int sourceWidth = ReadIntMember(topRect, "Width");
             int sourceHeight = ReadIntMember(topRect, "Height");
-            if (sourceWidth < 2 || sourceHeight < 2)
+            int textureWidth = ReadIntMember(texture, "Width");
+            int textureHeight = ReadIntMember(texture, "Height");
+            if (sourceWidth < 2 || sourceHeight < 2 || textureWidth < 1 || textureHeight < 1)
                 return;
 
-            int treeKind = Convert.ToInt32(ReadNetValue(__instance, _treeKind, 0));
-            bool hasSeed = Convert.ToBoolean(ReadNetValue(__instance, _hasSeed, false));
-            // Vanilla draws the second palm tree from one of two adjacent canopy frames.
-            if (treeKind == 9)
-                sourceX = hasSeed ? 48 : 0;
+            bool flipped = Convert.ToBoolean(ReadNetValue(__instance, AccessTools.Field(_treeType!, "flipped"), false));
+            int left = ToChannel(sourceX / (float)textureWidth);
+            int right = ToChannel((sourceX + sourceWidth) / (float)textureWidth);
+            int top = ToChannel(sourceY / (float)textureHeight);
+            int bottom = ToChannel((sourceY + sourceHeight) / (float)textureHeight);
 
-            bool flipped = Convert.ToBoolean(ReadNetValue(__instance, _flipped, false));
-            float treeAlpha = Math.Clamp(ReadFloatField(__instance, _alpha, 1f), 0f, 1f);
-            if (treeAlpha <= 0.01f)
-                return;
-            float rotation = ReadFloatField(__instance, _shakeRotation, 0f);
+            // Dynamic Shader encodes the normalized source-rectangle bounds in Color.rgba.
+            // Swapping R/B tells its shader that this sprite is horizontally flipped.
+            object encodedColor = Activator.CreateInstance(
+                colorType,
+                new object[] { (byte)(flipped ? right : left), (byte)top, (byte)(flipped ? left : right), (byte)bottom })!;
 
-            object? viewport = _viewport.GetValue(null);
-            if (viewport is null)
-                return;
+            object sourceRect = Activator.CreateInstance(
+                rectangleType,
+                new object[] { sourceX, sourceY, sourceWidth, sourceHeight })!;
 
             object tile = __args[1];
             float tileX = ReadFloatMember(tile, "X");
@@ -153,75 +243,25 @@ internal static class TreeCanopyLighting
             object position = Activator.CreateInstance(
                 vectorType,
                 new object[] { tileX * 64f + 32f - viewX, tileY * 64f + 64f - viewY })!;
+            object origin = Activator.CreateInstance(vectorType, new object[] { 24f, 96f })!;
+            object effects = Enum.ToObject(effectsType, flipped ? 1 : 0);
 
             object? batch = __args[0];
             if (batch is null)
                 return;
 
-            float hour = time / 100f;
-            float progress = Math.Clamp((hour - 6f) / 12f, 0f, 1f);
-            float noon = Math.Clamp(1f - Math.Abs(progress - 0.5f) * 2f, 0f, 1f);
-            float diffuse = 0.30f + 0.30f * noon;
-            float directional = 0.48f * (1f - noon);
-            float sunDirection = progress < 0.5f ? 1f : -1f;
-            float warmth = Math.Clamp(_config.Warmth, 0f, 1f);
-            float strength = Math.Clamp(_config.Strength, 0f, 1f);
-            float tintAlpha = 112f * strength * solar * treeAlpha;
-            if (tintAlpha < 1f)
-                return;
+            EnsureEffectLoaded();
+            SetCanopyParameters(isOak, hour, solar);
 
-            // Use short strips rather than one left/right split. This creates a soft pixel-art
-            // gradient across the canopy without a shader or a full-screen render target.
-            int stripWidth = Math.Max(1, (int)Math.Ceiling(sourceWidth / (float)Strips));
-            for (int start = 0; start < sourceWidth; start += stripWidth)
-            {
-                int width = Math.Min(stripWidth, sourceWidth - start);
-                float sourceXNorm = ((start + width * 0.5f) / sourceWidth) * 2f - 1f;
-                float screenXNorm = flipped ? -sourceXNorm : sourceXNorm;
-                float lightness = Math.Clamp(diffuse - screenXNorm * sunDirection * directional, 0.12f, 0.94f);
-
-                // The shaded tone stays green-brown, while the lit tone warms towards sunlight.
-                int red = (int)Math.Round(Lerp(24f, 255f, lightness));
-                int green = (int)Math.Round(Lerp(39f, 242f - 34f * warmth, lightness));
-                int blue = (int)Math.Round(Lerp(30f, 214f - 78f * warmth, lightness));
-                object color = Activator.CreateInstance(
-                    colorType,
-                    new object[] { (byte)red, (byte)green, (byte)blue, (byte)Math.Clamp((int)tintAlpha, 0, 255) })!;
-
-                object sourceRect = Activator.CreateInstance(
-                    rectangleType,
-                    new object[] { sourceX + start, sourceY, width, sourceHeight })!;
-
-                // Keep each strip anchored to the same 48x96 canopy origin used by Tree.draw.
-                // When flipped, the sub-rectangle's origin is mirrored as well.
-                float originX = flipped ? start + width - 24f : 24f - start;
-                object origin = Activator.CreateInstance(
-                    vectorType,
-                    new object[] { originX, 96f })!;
-
-                object effects = Enum.ToObject(effectsType, flipped ? 1 : 0);
-                // Slightly nearer than the vanilla crown, but still behind its trunk.
-                float layerDepth = ((tileY * 64f + 64f + 2f) / 10000f) - tileX / 1000000f - 0.0000001f;
-
-                dynamic spriteBatch = batch;
-                dynamic canopyTexture = texture;
-                dynamic screenPosition = position;
-                dynamic source = sourceRect;
-                dynamic tint = color;
-                dynamic drawOrigin = origin;
-                dynamic spriteEffects = effects;
-
-                spriteBatch.Draw(
-                    canopyTexture,
-                    screenPosition,
-                    source,
-                    tint,
-                    rotation,
-                    drawOrigin,
-                    4f,
-                    spriteEffects,
-                    layerDepth);
-            }
+            DrawCanopyWithEffect(
+                batch,
+                texture,
+                position,
+                sourceRect,
+                encodedColor,
+                rotation,
+                origin,
+                effects);
         }
         catch (Exception ex)
         {
@@ -230,19 +270,312 @@ internal static class TreeCanopyLighting
             {
                 _loggedRuntimeFailure = true;
                 _monitor?.Log(
-                    "Canopy lighting disabled after a render-hook error: " + ex.GetType().Name + ": " + ex.Message,
+                    "Canopy shader disabled after a render-hook error: " + ex.GetType().Name + ": " + ex.Message,
                     LogLevel.Warn);
             }
         }
+    }
+
+    private static void EnsureEffectLoaded()
+    {
+        if (_effect is not null)
+            return;
+        if (_effectInitializationAttempted)
+            throw new InvalidOperationException("The Dynamic Shader effect could not be initialized earlier.");
+        _effectInitializationAttempted = true;
+
+        if (_gameType is null || string.IsNullOrEmpty(_shaderPath) || !File.Exists(_shaderPath))
+            throw new FileNotFoundException("Dynamic Shader's ShadowEffect.mgfxo is missing.");
+
+        object? graphicsManager = ReadStaticMember(_gameType, "graphics");
+        object? graphicsDevice = graphicsManager is null ? null : ReadMember(graphicsManager, "GraphicsDevice");
+        if (graphicsDevice is null)
+            throw new InvalidOperationException("The game's GraphicsDevice is not available yet.");
+
+        Type effectType = AccessTools.TypeByName("Microsoft.Xna.Framework.Graphics.Effect")
+            ?? throw new InvalidOperationException("Couldn't find MonoGame's Effect type.");
+
+        _effect = Activator.CreateInstance(effectType, new object[] { graphicsDevice, File.ReadAllBytes(_shaderPath) })
+            ?? throw new InvalidOperationException("MonoGame failed to create Dynamic Shader's Effect.");
+    }
+
+    private static void SetCanopyParameters(bool isOak, float hour, float solar)
+    {
+        if (_effect is null || _config is null)
+            throw new InvalidOperationException("The canopy shader has not been loaded.");
+
+        float dayProgress = Math.Clamp((hour - 6f) / 12f, 0f, 1f);
+        float sunX = MathF.Cos(dayProgress * MathF.PI);
+        object? vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2");
+        if (vectorType is null)
+            throw new InvalidOperationException("Couldn't find MonoGame's Vector2 type.");
+
+        object sunDirection = Activator.CreateInstance(vectorType, new object[] { sunX, -0.55f })!;
+        string technique = isOak ? "TreeCanopyLight" : "TextureGuidedPineCanopyLight";
+        SetCurrentTechnique(technique);
+
+        float strength = Math.Clamp(_config.OverallStrength, 0f, 2f) * solar;
+        if (isOak)
+        {
+            SetEffectParameter("TreeCanopyLightSunDirection", sunDirection);
+            SetVector4("TreeCanopyLightColor", 1.05f, 1.00f, 0.90f, 1f);
+            SetVector4("TreeCanopyShadowColor", 0.78f, 0.84f, 0.92f, 1f);
+            SetFloat("TreeCanopyLightStrength", Math.Clamp(_config.OakLightStrength, 0f, 5f) * strength);
+            SetFloat("TreeCanopyShadowStrength", Math.Clamp(_config.OakShadowStrength, 0f, 5f) * strength);
+        }
+        else
+        {
+            SetVector4("TextureGuidedPineLightColor", 1.05f, 1.00f, 0.92f, 1f);
+            SetVector4("TextureGuidedPineShadowColor", 0.78f, 0.84f, 0.92f, 1f);
+            SetVector4("TextureGuidedPineRimColor", 1.12f, 1.06f, 0.90f, 1f);
+            SetFloat("TextureGuidedPineLightStrength", Math.Clamp(_config.PineLightStrength, 0f, 5f) * strength);
+            SetFloat("TextureGuidedPineShadowStrength", Math.Clamp(_config.PineShadowStrength, 0f, 5f) * strength);
+            SetFloat("TextureGuidedPineRimStrength", Math.Clamp(_config.PineRimStrength, 0f, 5f) * strength);
+        }
+    }
+
+    private static void DrawCanopyWithEffect(
+        object batch,
+        object texture,
+        object position,
+        object sourceRect,
+        object encodedColor,
+        float rotation,
+        object origin,
+        object effects)
+    {
+        BatchState state = CaptureBatchState(batch);
+        dynamic spriteBatch = batch;
+        bool batchOpen = true;
+
+        try
+        {
+            spriteBatch.End();
+            batchOpen = false;
+
+            spriteBatch.Begin(
+                GetEnum("Microsoft.Xna.Framework.Graphics.SpriteSortMode", "Deferred"),
+                GetStaticMember("Microsoft.Xna.Framework.Graphics.BlendState", "AlphaBlend"),
+                GetStaticMember("Microsoft.Xna.Framework.Graphics.SamplerState", "PointClamp"),
+                GetStaticMember("Microsoft.Xna.Framework.Graphics.DepthStencilState", "None"),
+                GetStaticMember("Microsoft.Xna.Framework.Graphics.RasterizerState", "CullCounterClockwise"),
+                _effect,
+                state.TransformMatrix);
+            batchOpen = true;
+
+            dynamic drawTexture = texture;
+            dynamic drawPosition = position;
+            dynamic drawSourceRect = sourceRect;
+            dynamic drawColor = encodedColor;
+            dynamic drawOrigin = origin;
+            dynamic spriteEffects = effects;
+            spriteBatch.Draw(drawTexture, drawPosition, drawSourceRect, drawColor, rotation, drawOrigin, 4f, spriteEffects, 0f);
+
+            spriteBatch.End();
+            batchOpen = false;
+            BeginRestoredBatch(spriteBatch, state);
+            batchOpen = true;
+        }
+        catch
+        {
+            // Never leave the game's SpriteBatch closed or leave our effect attached to it.
+            if (batchOpen)
+            {
+                try
+                {
+                    spriteBatch.End();
+                    batchOpen = false;
+                }
+                catch
+                {
+                    // A failed End means the batch may already be closed; try restoring it below.
+                    batchOpen = false;
+                }
+            }
+
+            if (!batchOpen)
+            {
+                try
+                {
+                    BeginRestoredBatch(spriteBatch, state);
+                }
+                catch (Exception restoreException)
+                {
+                    _monitor?.Log("Couldn't restore the game's SpriteBatch after canopy rendering: " + restoreException.Message, LogLevel.Error);
+                }
+            }
+            throw;
+        }
+    }
+
+    private sealed class BatchState
+    {
+        public object SortMode { get; init; } = GetEnum("Microsoft.Xna.Framework.Graphics.SpriteSortMode", "Deferred");
+        public object BlendState { get; init; } = GetStaticMember("Microsoft.Xna.Framework.Graphics.BlendState", "AlphaBlend");
+        public object SamplerState { get; init; } = GetStaticMember("Microsoft.Xna.Framework.Graphics.SamplerState", "PointClamp");
+        public object DepthStencilState { get; init; } = GetStaticMember("Microsoft.Xna.Framework.Graphics.DepthStencilState", "None");
+        public object RasterizerState { get; init; } = GetStaticMember("Microsoft.Xna.Framework.Graphics.RasterizerState", "CullCounterClockwise");
+        public object? Effect { get; init; }
+        public object TransformMatrix { get; init; } = GetStaticMember("Microsoft.Xna.Framework.Matrix", "Identity");
+    }
+
+    private static BatchState CaptureBatchState(object batch)
+    {
+        Type type = batch.GetType();
+        object sortMode = ReadFirstField(batch, "_sortMode", "sortMode")
+            ?? GetEnum("Microsoft.Xna.Framework.Graphics.SpriteSortMode", "Deferred");
+        object blend = ReadFirstField(batch, "_blendState", "blendState")
+            ?? GetStaticMember("Microsoft.Xna.Framework.Graphics.BlendState", "AlphaBlend");
+        object sampler = ReadFirstField(batch, "_samplerState", "samplerState")
+            ?? GetStaticMember("Microsoft.Xna.Framework.Graphics.SamplerState", "PointClamp");
+        object depth = ReadFirstField(batch, "_depthStencilState", "depthStencilState")
+            ?? GetStaticMember("Microsoft.Xna.Framework.Graphics.DepthStencilState", "None");
+        object rasterizer = ReadFirstField(batch, "_rasterizerState", "rasterizerState")
+            ?? GetStaticMember("Microsoft.Xna.Framework.Graphics.RasterizerState", "CullCounterClockwise");
+        object? effect = ReadFirstField(batch, "_customEffect", "_effect", "customEffect");
+        object transform = ReadFirstField(batch, "_transformMatrix", "transformMatrix")
+            ?? GetStaticMember("Microsoft.Xna.Framework.Matrix", "Identity");
+
+        object? begun = ReadFirstField(batch, "_beginCalled", "beginCalled");
+        if (begun is not null && !Convert.ToBoolean(begun))
+            throw new InvalidOperationException("Tree.draw ran without an active SpriteBatch.Begin.");
+
+        return new BatchState
+        {
+            SortMode = sortMode,
+            BlendState = blend,
+            SamplerState = sampler,
+            DepthStencilState = depth,
+            RasterizerState = rasterizer,
+            Effect = effect,
+            TransformMatrix = transform
+        };
+    }
+
+    private static void BeginRestoredBatch(dynamic spriteBatch, BatchState state)
+    {
+        spriteBatch.Begin(
+            state.SortMode,
+            state.BlendState,
+            state.SamplerState,
+            state.DepthStencilState,
+            state.RasterizerState,
+            state.Effect,
+            state.TransformMatrix);
+    }
+
+    private static object? ReadFirstField(object instance, params string[] names)
+    {
+        for (Type? type = instance.GetType(); type is not null; type = type.BaseType)
+        {
+            foreach (string name in names)
+            {
+                FieldInfo? field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                if (field is not null)
+                    return field.GetValue(instance);
+            }
+        }
+        return null;
+    }
+
+    private static void SetCurrentTechnique(string name)
+    {
+        object? techniques = ReadMember(_effect!, "Techniques");
+        if (techniques is null)
+            throw new InvalidOperationException("Dynamic Shader's Effect has no technique collection.");
+
+        PropertyInfo? indexer = techniques.GetType().GetProperties()
+            .FirstOrDefault(property =>
+            {
+                ParameterInfo[] indexParameters = property.GetIndexParameters();
+                return property.Name == "Item"
+                    && indexParameters.Length == 1
+                    && indexParameters[0].ParameterType == typeof(string);
+            });
+
+        object? technique = indexer?.GetValue(techniques, new object[] { name });
+        if (technique is null)
+            throw new InvalidOperationException("Dynamic Shader's Effect is missing technique " + name + ".");
+
+        PropertyInfo? currentTechnique = AccessTools.Property(_effect!.GetType(), "CurrentTechnique");
+        if (currentTechnique?.CanWrite != true)
+            throw new InvalidOperationException("Couldn't change the current canopy shader technique.");
+        currentTechnique.SetValue(_effect, technique);
+    }
+
+    private static void SetVector4(string name, float x, float y, float z, float w)
+    {
+        Type vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector4")
+            ?? throw new InvalidOperationException("Couldn't find MonoGame's Vector4 type.");
+        object value = Activator.CreateInstance(vectorType, new object[] { x, y, z, w })!;
+        SetEffectParameter(name, value);
+    }
+
+    private static void SetFloat(string name, float value) => SetEffectParameter(name, value);
+
+    private static void SetEffectParameter(string name, object value)
+    {
+        object? parameters = ReadMember(_effect!, "Parameters");
+        if (parameters is null)
+            throw new InvalidOperationException("Dynamic Shader's Effect has no parameter collection.");
+
+        PropertyInfo? indexer = parameters.GetType().GetProperties()
+            .FirstOrDefault(property =>
+            {
+                ParameterInfo[] indexParameters = property.GetIndexParameters();
+                return property.Name == "Item"
+                    && indexParameters.Length == 1
+                    && indexParameters[0].ParameterType == typeof(string);
+            });
+
+        object? parameter = indexer?.GetValue(parameters, new object[] { name });
+        if (parameter is null)
+            throw new InvalidOperationException("Dynamic Shader's Effect is missing parameter " + name + ".");
+
+        MethodInfo? setValue = parameter.GetType().GetMethods()
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "SetValue")
+                    return false;
+                ParameterInfo[] parametersForMethod = method.GetParameters();
+                return parametersForMethod.Length == 1 && parametersForMethod[0].ParameterType.IsInstanceOfType(value);
+            });
+
+        if (setValue is null)
+            throw new InvalidOperationException("Couldn't set Dynamic Shader parameter " + name + ".");
+        setValue.Invoke(parameter, new[] { value });
+    }
+
+    private static object GetEnum(string typeName, string value)
+    {
+        Type type = AccessTools.TypeByName(typeName)
+            ?? throw new InvalidOperationException("Couldn't find runtime type " + typeName + ".");
+        return Enum.Parse(type, value);
+    }
+
+    private static object GetStaticMember(string typeName, string memberName)
+    {
+        Type type = AccessTools.TypeByName(typeName)
+            ?? throw new InvalidOperationException("Couldn't find runtime type " + typeName + ".");
+        PropertyInfo? property = AccessTools.Property(type, memberName);
+        if (property is not null)
+            return property.GetValue(null)!;
+        FieldInfo? field = AccessTools.Field(type, memberName);
+        return field?.GetValue(null)
+            ?? throw new InvalidOperationException("Couldn't find static member " + typeName + "." + memberName + ".");
+    }
+
+    private static object? ReadStaticMember(Type type, string name)
+    {
+        return AccessTools.Property(type, name)?.GetValue(null)
+            ?? AccessTools.Field(type, name)?.GetValue(null);
     }
 
     private static object? ReadNetValue(object instance, FieldInfo? field, object fallback)
     {
         if (field?.GetValue(instance) is not object netField)
             return fallback;
-
-        object? value = ReadMember(netField, "Value");
-        return value ?? fallback;
+        return ReadMember(netField, "Value") ?? fallback;
     }
 
     private static object? ReadMember(object instance, string name)
@@ -276,11 +609,13 @@ internal static class TreeCanopyLighting
         return value is null ? fallback : Convert.ToSingle(value);
     }
 
+    private static int ToChannel(float normalized) =>
+        Math.Clamp((int)Math.Round(Math.Clamp(normalized, 0f, 1f) * 255f), 0, 255);
+
     private static float GetDaylightFactor(float hour)
     {
-        // Fade the light in after sunrise and out around sunset; no crown tint at night.
-        float sunrise = SmoothStep(6f, 7.3f, hour);
-        float sunset = 1f - SmoothStep(16.7f, 18.6f, hour);
+        float sunrise = SmoothStep(6.5f, 7.5f, hour);
+        float sunset = 1f - SmoothStep(16.5f, 18.2f, hour);
         return Math.Clamp(sunrise * sunset, 0f, 1f);
     }
 
@@ -289,6 +624,4 @@ internal static class TreeCanopyLighting
         float t = Math.Clamp((value - edge0) / (edge1 - edge0), 0f, 1f);
         return t * t * (3f - 2f * t);
     }
-
-    private static float Lerp(float from, float to, float amount) => from + (to - from) * amount;
 }
