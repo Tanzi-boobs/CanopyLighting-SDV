@@ -4,12 +4,10 @@ namespace CanopyLighting;
 
 /// <summary>
 /// Canopy Lighting prototype.
-/// 
-/// This first safe scaffold exposes the config and lifecycle. The actual
-/// canopy-only render hook still needs implementation and in-game verification;
-/// vanilla Stardew does not expose a canopy mask as a simple public API.
+/// The current version validates the SMAPI loading path and configuration;
+/// canopy rendering is not implemented yet.
 /// </summary>
-internal sealed class ModEntry : Mod
+public sealed class ModEntry : Mod
 {
     private ModConfig Config = new();
 
@@ -19,7 +17,7 @@ internal sealed class ModEntry : Mod
         helper.WriteConfig(Config);
 
         Monitor.Log(
-            "Canopy Lighting loaded. This build is a scaffold; canopy rendering is not implemented yet.",
+            "Canopy Lighting scaffold loaded. Canopy lighting effects are not implemented in this build.",
             LogLevel.Warn);
     }
 }
