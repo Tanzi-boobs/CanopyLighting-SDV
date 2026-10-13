@@ -19,7 +19,7 @@ jobs:
           dotnet-version: 6.0.x
 
       - name: Build mod
-        run: dotnet build CanopyLighting.csproj --configuration Release
+        run: dotnet build CanopyLighting.csproj --configuration Release -p:EnableModDeploy=false -p:EnableModZip=false
 
       - name: Package
         shell: bash
