@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p refs
-          curl -fL https://github.com/Pathoschild/SMAPI/releases/latest/download/SMAPI-internal.zip -o /tmp/smapi.zip
+          curl -fL https://github.com/Pathoschild/SMAPI/releases/download/4.5.2/SMAPI-4.5.2-installer.zip -o /tmp/smapi.zip
           unzip -l /tmp/smapi.zip | head -80
           unzip -o /tmp/smapi.zip -d /tmp/smapi-release
           find /tmp/smapi-release -type f \( -name 'StardewModdingAPI.dll' -o -name 'Stardew Valley.dll' -o -name 'MonoGame.Framework.dll' \) -exec cp {} refs/ \;
