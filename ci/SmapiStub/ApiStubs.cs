@@ -10,6 +10,15 @@ public enum LogLevel
     Alert
 }
 
+public interface IManifest
+{
+}
+
+public interface IModRegistry
+{
+    T? GetApi<T>(string uniqueID) where T : class;
+}
+
 public interface IMonitor
 {
     void Log(string message, LogLevel level = LogLevel.Info);
@@ -18,6 +27,7 @@ public interface IMonitor
 public interface IModHelper
 {
     string DirectoryPath { get; }
+    IModRegistry ModRegistry { get; }
     T ReadConfig<T>() where T : new();
     void WriteConfig<T>(T config);
 }
@@ -25,10 +35,15 @@ public interface IModHelper
 public abstract class Mod
 {
     protected IMonitor Monitor { get; } = new NullMonitor();
+    protected IManifest ModManifest { get; } = new NullManifest();
     public abstract void Entry(IModHelper helper);
 
     private sealed class NullMonitor : IMonitor
     {
         public void Log(string message, LogLevel level = LogLevel.Info) { }
+    }
+
+    private sealed class NullManifest : IManifest
+    {
     }
 }
