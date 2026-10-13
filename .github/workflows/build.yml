@@ -12,33 +12,35 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 6.0.x
 
-      - name: Prepare minimal Stardew references
+      - name: Download SMAPI release assembly
+        shell: bash
         run: |
-          mkdir -p /tmp/stardew-stub
-          touch /tmp/stardew-stub/Stardew Valley.dll
+          mkdir -p refs
+          curl -fL https://github.com/Pathoschild/SMAPI/releases/latest/download/SMAPI-internal.zip -o /tmp/smapi.zip
+          unzip -l /tmp/smapi.zip | head -80
+          unzip -o /tmp/smapi.zip -d /tmp/smapi-release
+          find /tmp/smapi-release -type f \( -name 'StardewModdingAPI.dll' -o -name 'Stardew Valley.dll' -o -name 'MonoGame.Framework.dll' \) -exec cp {} refs/ \;
+          ls -la refs
 
-      - name: Build mod
-        run: dotnet build CanopyLighting.csproj --configuration Release -p:GamePath=/tmp/stardew-stub -p:EnableModDeploy=false -p:EnableModZip=false
+      - name: Build
+        run: dotnet build CanopyLighting.csproj --configuration Release
 
-      - name: Package mod
+      - name: Package
         shell: bash
         run: |
           mkdir -p artifact/CanopyLighting
           cp manifest.json artifact/CanopyLighting/
-          find bin/Release -type f -name 'CanopyLighting.dll' -exec cp {} artifact/CanopyLighting/ \;
+          cp bin/Release/net6.0/CanopyLighting.dll artifact/CanopyLighting/
           cd artifact
           zip -r ../CanopyLighting.zip CanopyLighting
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: CanopyLighting
           path: CanopyLighting.zip
