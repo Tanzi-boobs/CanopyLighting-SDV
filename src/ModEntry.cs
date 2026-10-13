@@ -1,8 +1,9 @@
+using System.Reflection;
 using StardewModdingAPI;
 
 namespace CanopyLighting;
 
-/// <summary>Loads standalone canopy lighting and registers its GMCM options when available.</summary>
+/// <summary>Loads standalone canopy lighting and registers GMCM options via reflection for Android SMAPI forks.</summary>
 public sealed class ModEntry : Mod
 {
     private ModConfig Config = new();
@@ -39,122 +40,159 @@ public sealed class ModEntry : Mod
 
     private void RegisterConfigMenu(IModHelper helper)
     {
-        IGenericModConfigMenuApi? api = helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
+        // Use the raw API object and reflection instead of a Pintail API interface.
+        // Some Android SMAPI builds don't expose StardewModdingAPI.IManifest, which
+        // otherwise causes TypeLoadException before GMCM can register this mod.
+        object? api = helper.ModRegistry.GetApi<object>("spacechase0.GenericModConfigMenu");
         if (api is null)
         {
             Monitor.Log("Generic Mod Config Menu wasn't found; settings remain editable in config.json.", LogLevel.Debug);
             return;
         }
 
-        api.Register(
-            mod: ModManifest,
-            reset: () =>
+        InvokeApi(api, "Register",
+            ModManifest,
+            (Action)(() =>
             {
                 Config = new ModConfig();
                 ClampConfig();
                 TreeCanopyLighting.UpdateConfig(Config);
                 helper.WriteConfig(Config);
-            },
-            save: () =>
+            }),
+            (Action)(() =>
             {
                 ClampConfig();
                 TreeCanopyLighting.UpdateConfig(Config);
                 helper.WriteConfig(Config);
-            });
+            }),
+            false);
 
-        api.AddSectionTitle(ModManifest, () => "Canopy Lighting");
-        api.AddParagraph(ModManifest, () => "Lights tree canopies only. It does not draw extra shadows on the ground; vanilla ground shadows are unchanged.");
+        InvokeApi(api, "AddSectionTitle", ModManifest, (Func<string>)(() => "Canopy Lighting"), null);
+        InvokeApi(api, "AddParagraph", ModManifest, (Func<string>)(() => "Lights tree canopies only. It does not draw extra shadows on the ground; vanilla ground shadows are unchanged."));
 
-        api.AddBoolOption(
-            ModManifest,
-            getValue: () => Config.Enabled,
-            setValue: value => Config.Enabled = value,
-            name: () => "Enable canopy lighting",
-            tooltip: () => "Turn the canopy-lighting effect on or off.");
+        InvokeApi(api, "AddBoolOption", ModManifest,
+            (Func<bool>)(() => Config.Enabled),
+            (Action<bool>)(value => Config.Enabled = value),
+            (Func<string>)(() => "Enable canopy lighting"),
+            (Func<string>)(() => "Turn the canopy-lighting effect on or off."),
+            null);
 
-        api.AddNumberOption(
-            ModManifest,
-            getValue: () => Config.OverallStrength,
-            setValue: value => Config.OverallStrength = value,
-            name: () => "Overall strength",
-            tooltip: () => "Master strength for all canopy lighting.",
-            min: 0f,
-            max: 2f,
-            interval: 0.05f,
-            formatValue: value => value.ToString("0.00"));
+        InvokeApi(api, "AddNumberOption", ModManifest,
+            (Func<float>)(() => Config.OverallStrength),
+            (Action<float>)(value => Config.OverallStrength = value),
+            (Func<string>)(() => "Overall strength"),
+            (Func<string>)(() => "Master strength for all canopy lighting."),
+            (float?)0f, (float?)2f, (float?)0.05f,
+            (Func<float, string>)(value => value.ToString("0.00")),
+            null);
 
-        api.AddSectionTitle(ModManifest, () => "Broadleaf and Other Trees");
-        api.AddBoolOption(
-            ModManifest,
-            getValue: () => Config.EnableOakCanopy,
-            setValue: value => Config.EnableOakCanopy = value,
-            name: () => "Enable broadleaf profile",
-            tooltip: () => "Applies to mature non-pine wild trees, such as oak, maple, mahogany, palm, mushroom and mystic trees.");
+        InvokeApi(api, "AddSectionTitle", ModManifest, (Func<string>)(() => "Broadleaf and Other Trees"), null);
+        InvokeApi(api, "AddBoolOption", ModManifest,
+            (Func<bool>)(() => Config.EnableOakCanopy),
+            (Action<bool>)(value => Config.EnableOakCanopy = value),
+            (Func<string>)(() => "Enable broadleaf profile"),
+            (Func<string>)(() => "Applies to mature non-pine wild trees, such as oak, maple, mahogany, palm, mushroom and mystic trees."),
+            null);
 
-        api.AddNumberOption(
-            ModManifest,
-            getValue: () => Config.OakLightStrength,
-            setValue: value => Config.OakLightStrength = value,
-            name: () => "Broadleaf light strength",
-            tooltip: () => "Brightness applied to the lit portion of the canopy.",
-            min: 0f,
-            max: 5f,
-            interval: 0.05f,
-            formatValue: value => value.ToString("0.00"));
+        InvokeApi(api, "AddNumberOption", ModManifest,
+            (Func<float>)(() => Config.OakLightStrength),
+            (Action<float>)(value => Config.OakLightStrength = value),
+            (Func<string>)(() => "Broadleaf light strength"),
+            (Func<string>)(() => "Brightness applied to the lit portion of the canopy."),
+            (float?)0f, (float?)5f, (float?)0.05f,
+            (Func<float, string>)(value => value.ToString("0.00")),
+            null);
 
-        api.AddNumberOption(
-            ModManifest,
-            getValue: () => Config.OakShadowStrength,
-            setValue: value => Config.OakShadowStrength = value,
-            name: () => "Broadleaf canopy shading",
-            tooltip: () => "Darkening on the back-facing canopy pixels only; no ground shadow is drawn.",
-            min: 0f,
-            max: 3f,
-            interval: 0.05f,
-            formatValue: value => value.ToString("0.00"));
+        InvokeApi(api, "AddNumberOption", ModManifest,
+            (Func<float>)(() => Config.OakShadowStrength),
+            (Action<float>)(value => Config.OakShadowStrength = value),
+            (Func<string>)(() => "Broadleaf canopy shading"),
+            (Func<string>)(() => "Darkening on back-facing canopy pixels only; no ground shadow is drawn."),
+            (float?)0f, (float?)3f, (float?)0.05f,
+            (Func<float, string>)(value => value.ToString("0.00")),
+            null);
 
-        api.AddSectionTitle(ModManifest, () => "Pine Trees");
-        api.AddBoolOption(
-            ModManifest,
-            getValue: () => Config.EnablePineCanopy,
-            setValue: value => Config.EnablePineCanopy = value,
-            name: () => "Enable pine lighting",
-            tooltip: () => "Apply the texture-guided lighting profile to mature pine canopies.");
+        InvokeApi(api, "AddSectionTitle", ModManifest, (Func<string>)(() => "Pine Trees"), null);
+        InvokeApi(api, "AddBoolOption", ModManifest,
+            (Func<bool>)(() => Config.EnablePineCanopy),
+            (Action<bool>)(value => Config.EnablePineCanopy = value),
+            (Func<string>)(() => "Enable pine lighting"),
+            (Func<string>)(() => "Apply the texture-guided lighting profile to mature pine canopies."),
+            null);
 
-        api.AddNumberOption(
-            ModManifest,
-            getValue: () => Config.PineLightStrength,
-            setValue: value => Config.PineLightStrength = value,
-            name: () => "Pine light strength",
-            tooltip: () => "Brightness on lit pine-canopy pixels.",
-            min: 0f,
-            max: 5f,
-            interval: 0.05f,
-            formatValue: value => value.ToString("0.00"));
+        InvokeApi(api, "AddNumberOption", ModManifest,
+            (Func<float>)(() => Config.PineLightStrength),
+            (Action<float>)(value => Config.PineLightStrength = value),
+            (Func<string>)(() => "Pine light strength"),
+            (Func<string>)(() => "Brightness on lit pine-canopy pixels."),
+            (float?)0f, (float?)5f, (float?)0.05f,
+            (Func<float, string>)(value => value.ToString("0.00")),
+            null);
 
-        api.AddNumberOption(
-            ModManifest,
-            getValue: () => Config.PineShadowStrength,
-            setValue: value => Config.PineShadowStrength = value,
-            name: () => "Pine canopy shading",
-            tooltip: () => "Darkening on the back-facing pine canopy pixels only; no ground shadow is drawn.",
-            min: 0f,
-            max: 5f,
-            interval: 0.05f,
-            formatValue: value => value.ToString("0.00"));
+        InvokeApi(api, "AddNumberOption", ModManifest,
+            (Func<float>)(() => Config.PineShadowStrength),
+            (Action<float>)(value => Config.PineShadowStrength = value),
+            (Func<string>)(() => "Pine canopy shading"),
+            (Func<string>)(() => "Darkening on back-facing pine canopy pixels only; no ground shadow is drawn."),
+            (float?)0f, (float?)5f, (float?)0.05f,
+            (Func<float, string>)(value => value.ToString("0.00")),
+            null);
 
-        api.AddNumberOption(
-            ModManifest,
-            getValue: () => Config.PineRimStrength,
-            setValue: value => Config.PineRimStrength = value,
-            name: () => "Pine rim lighting",
-            tooltip: () => "Additional light along the sun-facing pine-canopy edges.",
-            min: 0f,
-            max: 5f,
-            interval: 0.05f,
-            formatValue: value => value.ToString("0.00"));
+        InvokeApi(api, "AddNumberOption", ModManifest,
+            (Func<float>)(() => Config.PineRimStrength),
+            (Action<float>)(value => Config.PineRimStrength = value),
+            (Func<string>)(() => "Pine rim lighting"),
+            (Func<string>)(() => "Additional light along sun-facing pine-canopy edges."),
+            (float?)0f, (float?)5f, (float?)0.05f,
+            (Func<float, string>)(value => value.ToString("0.00")),
+            null);
 
         Monitor.Log("Registered canopy lighting settings with Generic Mod Config Menu.", LogLevel.Info);
+    }
+
+    private static object? InvokeApi(object api, string methodName, params object?[] arguments)
+    {
+        MethodInfo? method = api.GetType()
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(candidate => candidate.Name == methodName && candidate.GetParameters().Length == arguments.Length)
+            .FirstOrDefault(candidate =>
+            {
+                ParameterInfo[] parameters = candidate.GetParameters();
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    Type parameterType = parameters[i].ParameterType;
+                    Type? nullableType = Nullable.GetUnderlyingType(parameterType);
+                    object? argument = arguments[i];
+
+                    if (argument is null)
+                    {
+                        if (parameterType.IsValueType && nullableType is null)
+                            return false;
+                        continue;
+                    }
+
+                    if (!parameterType.IsInstanceOfType(argument)
+                        && (nullableType is null || !nullableType.IsInstanceOfType(argument)))
+                        return false;
+                }
+
+                return true;
+            });
+
+        if (method is null)
+        {
+            string argumentTypes = string.Join(", ", arguments.Select(argument => argument?.GetType().FullName ?? "null"));
+            throw new MissingMethodException($"GMCM API method {methodName}({argumentTypes}) wasn't found on {api.GetType().FullName}.");
+        }
+
+        try
+        {
+            return method.Invoke(api, arguments);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw new InvalidOperationException($"GMCM API method {methodName} failed: {ex.InnerException.Message}", ex.InnerException);
+        }
     }
 
     private void ClampConfig()
