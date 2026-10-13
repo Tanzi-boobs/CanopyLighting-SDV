@@ -20,26 +20,9 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
-      - name: Configure CI references
+      - name: Use SMAPI and game assemblies
         run: |
-          dotnet add CanopyLighting.csproj package StardewModdingAPI.Framework --version 4.1.10 || true
-          dotnet add CanopyLighting.csproj package Pathoschild.Stardew.ModBuildConfig --version 4.4.0 || true
+          dotnet add CanopyLighting.csproj package Pathoschild.Stardew.ModBuildConfig --version 4.4.0
 
-      - name: Build mod
-        run: dotnet build CanopyLighting.csproj --configuration Release -p:EnableModDeploy=false -p:EnableModZip=false -p:GamePath=/tmp/stardew-stub
-
-      - name: Package mod
-        shell: bash
-        run: |
-          mkdir -p artifact/CanopyLighting
-          cp manifest.json artifact/CanopyLighting/
-          find bin/Release -type f -name 'CanopyLighting.dll' -exec cp {} artifact/CanopyLighting/ \;
-          cd artifact
-          zip -r ../CanopyLighting.zip CanopyLighting
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: CanopyLighting
-          path: CanopyLighting.zip
-          if-no-files-found: error
+      - name: Build
+        run: dotnet build CanopyLighting.csproj --configuration Release -p:GamePath=/tmp/game -p:EnableModDeploy=false
