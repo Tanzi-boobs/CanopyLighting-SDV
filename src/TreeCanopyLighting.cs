@@ -8,7 +8,7 @@ using StardewModdingAPI;
 namespace CanopyLighting;
 
 /// <summary>
-/// Draws the Dynamic Shader canopy technique at the same point in the world draw order
+/// Draws the standalone canopy shader technique at the same point in the world draw order
 /// as each vanilla tree. The shader is loaded from the user's DynamicShader installation;
 /// this mod deliberately does not redistribute the compiled shader asset.
 /// </summary>
@@ -166,7 +166,7 @@ internal static class TreeCanopyLighting
             int top = ToChannel(sourceY / (float)textureHeight);
             int bottom = ToChannel((sourceY + sourceHeight) / (float)textureHeight);
 
-            // Dynamic Shader encodes the normalized source-rectangle bounds in Color.rgba.
+            // The canopy shader encodes the normalized source-rectangle bounds in Color.rgba.
             // Swapping R/B tells its shader that this sprite is horizontally flipped.
             object encodedColor = Activator.CreateInstance(
                 colorType,
@@ -226,7 +226,7 @@ internal static class TreeCanopyLighting
         _effectInitializationAttempted = true;
 
         if (_gameType is null || string.IsNullOrEmpty(_shaderPath) || !File.Exists(_shaderPath))
-            throw new FileNotFoundException("Dynamic Shader's ShadowEffect.mgfxo is missing.");
+            throw new FileNotFoundException("Canopy Lighting's bundled ShadowEffect.mgfxo is missing.");
 
         object? graphicsManager = ReadStaticMember(_gameType, "graphics");
         object? graphicsDevice = graphicsManager is null ? null : ReadMember(graphicsManager, "GraphicsDevice");
@@ -423,7 +423,7 @@ internal static class TreeCanopyLighting
     {
         object? techniques = ReadMember(_effect!, "Techniques");
         if (techniques is null)
-            throw new InvalidOperationException("Dynamic Shader's Effect has no technique collection.");
+            throw new InvalidOperationException("The bundled Effect has no technique collection.");
 
         PropertyInfo? indexer = techniques.GetType().GetProperties()
             .FirstOrDefault(property =>
@@ -436,7 +436,7 @@ internal static class TreeCanopyLighting
 
         object? technique = indexer?.GetValue(techniques, new object[] { name });
         if (technique is null)
-            throw new InvalidOperationException("Dynamic Shader's Effect is missing technique " + name + ".");
+            throw new InvalidOperationException("The bundled Effect is missing technique " + name + ".");
 
         PropertyInfo? currentTechnique = AccessTools.Property(_effect!.GetType(), "CurrentTechnique");
         if (currentTechnique?.CanWrite != true)
@@ -458,7 +458,7 @@ internal static class TreeCanopyLighting
     {
         object? parameters = ReadMember(_effect!, "Parameters");
         if (parameters is null)
-            throw new InvalidOperationException("Dynamic Shader's Effect has no parameter collection.");
+            throw new InvalidOperationException("The bundled Effect has no parameter collection.");
 
         PropertyInfo? indexer = parameters.GetType().GetProperties()
             .FirstOrDefault(property =>
@@ -471,7 +471,7 @@ internal static class TreeCanopyLighting
 
         object? parameter = indexer?.GetValue(parameters, new object[] { name });
         if (parameter is null)
-            throw new InvalidOperationException("Dynamic Shader's Effect is missing parameter " + name + ".");
+            throw new InvalidOperationException("The bundled Effect is missing parameter " + name + ".");
 
         MethodInfo? setValue = parameter.GetType().GetMethods()
             .FirstOrDefault(method =>
@@ -483,7 +483,7 @@ internal static class TreeCanopyLighting
             });
 
         if (setValue is null)
-            throw new InvalidOperationException("Couldn't set Dynamic Shader parameter " + name + ".");
+            throw new InvalidOperationException("Couldn't set shader parameter " + name + ".");
         setValue.Invoke(parameter, new[] { value });
     }
 
