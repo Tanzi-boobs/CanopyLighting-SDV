@@ -51,7 +51,7 @@ public sealed class ModEntry : Mod
         }
 
         InvokeApi(api, "Register",
-            ModManifest,
+            null,
             (Action)(() =>
             {
                 Config = new ModConfig();
@@ -67,17 +67,17 @@ public sealed class ModEntry : Mod
             }),
             false);
 
-        InvokeApi(api, "AddSectionTitle", ModManifest, (Func<string>)(() => "Canopy Lighting"), null);
-        InvokeApi(api, "AddParagraph", ModManifest, (Func<string>)(() => "Lights tree canopies only. It does not draw extra shadows on the ground; vanilla ground shadows are unchanged."));
+        InvokeApi(api, "AddSectionTitle", null, (Func<string>)(() => "Canopy Lighting"), null);
+        InvokeApi(api, "AddParagraph", null, (Func<string>)(() => "Lights tree canopies only. It does not draw extra shadows on the ground; vanilla ground shadows are unchanged."));
 
-        InvokeApi(api, "AddBoolOption", ModManifest,
+        InvokeApi(api, "AddBoolOption", null,
             (Func<bool>)(() => Config.Enabled),
             (Action<bool>)(value => Config.Enabled = value),
             (Func<string>)(() => "Enable canopy lighting"),
             (Func<string>)(() => "Turn the canopy-lighting effect on or off."),
             null);
 
-        InvokeApi(api, "AddNumberOption", ModManifest,
+        InvokeApi(api, "AddNumberOption", null,
             (Func<float>)(() => Config.OverallStrength),
             (Action<float>)(value => Config.OverallStrength = value),
             (Func<string>)(() => "Overall strength"),
@@ -86,15 +86,15 @@ public sealed class ModEntry : Mod
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
-        InvokeApi(api, "AddSectionTitle", ModManifest, (Func<string>)(() => "Broadleaf and Other Trees"), null);
-        InvokeApi(api, "AddBoolOption", ModManifest,
+        InvokeApi(api, "AddSectionTitle", null, (Func<string>)(() => "Broadleaf and Other Trees"), null);
+        InvokeApi(api, "AddBoolOption", null,
             (Func<bool>)(() => Config.EnableOakCanopy),
             (Action<bool>)(value => Config.EnableOakCanopy = value),
             (Func<string>)(() => "Enable broadleaf profile"),
             (Func<string>)(() => "Applies to mature non-pine wild trees, such as oak, maple, mahogany, palm, mushroom and mystic trees."),
             null);
 
-        InvokeApi(api, "AddNumberOption", ModManifest,
+        InvokeApi(api, "AddNumberOption", null,
             (Func<float>)(() => Config.OakLightStrength),
             (Action<float>)(value => Config.OakLightStrength = value),
             (Func<string>)(() => "Broadleaf light strength"),
@@ -103,7 +103,7 @@ public sealed class ModEntry : Mod
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
-        InvokeApi(api, "AddNumberOption", ModManifest,
+        InvokeApi(api, "AddNumberOption", null,
             (Func<float>)(() => Config.OakShadowStrength),
             (Action<float>)(value => Config.OakShadowStrength = value),
             (Func<string>)(() => "Broadleaf canopy shading"),
@@ -112,15 +112,15 @@ public sealed class ModEntry : Mod
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
-        InvokeApi(api, "AddSectionTitle", ModManifest, (Func<string>)(() => "Pine Trees"), null);
-        InvokeApi(api, "AddBoolOption", ModManifest,
+        InvokeApi(api, "AddSectionTitle", null, (Func<string>)(() => "Pine Trees"), null);
+        InvokeApi(api, "AddBoolOption", null,
             (Func<bool>)(() => Config.EnablePineCanopy),
             (Action<bool>)(value => Config.EnablePineCanopy = value),
             (Func<string>)(() => "Enable pine lighting"),
             (Func<string>)(() => "Apply the texture-guided lighting profile to mature pine canopies."),
             null);
 
-        InvokeApi(api, "AddNumberOption", ModManifest,
+        InvokeApi(api, "AddNumberOption", null,
             (Func<float>)(() => Config.PineLightStrength),
             (Action<float>)(value => Config.PineLightStrength = value),
             (Func<string>)(() => "Pine light strength"),
@@ -129,7 +129,7 @@ public sealed class ModEntry : Mod
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
-        InvokeApi(api, "AddNumberOption", ModManifest,
+        InvokeApi(api, "AddNumberOption", null,
             (Func<float>)(() => Config.PineShadowStrength),
             (Action<float>)(value => Config.PineShadowStrength = value),
             (Func<string>)(() => "Pine canopy shading"),
@@ -138,7 +138,7 @@ public sealed class ModEntry : Mod
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
-        InvokeApi(api, "AddNumberOption", ModManifest,
+        InvokeApi(api, "AddNumberOption", null,
             (Func<float>)(() => Config.PineRimStrength),
             (Action<float>)(value => Config.PineRimStrength = value),
             (Func<string>)(() => "Pine rim lighting"),
