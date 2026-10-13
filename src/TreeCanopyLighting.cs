@@ -46,6 +46,11 @@ internal static class TreeCanopyLighting
     private static bool _loggedMatureCandidate;
     private static bool _loggedSuccessfulRender;
 
+    internal static void UpdateConfig(ModConfig config)
+    {
+        _config = config;
+    }
+
     public static void Install(ModConfig config, IMonitor monitor, string modDirectory)
     {
         _config = config;
