@@ -1,8 +1,8 @@
 {
   "Name": "Canopy Lighting",
   "Author": "Tanzi",
-  "Version": "0.1.0",
-  "Description": "A standalone canopy-lighting prototype for Stardew Valley 1.6.",
+  "Version": "0.2.0",
+  "Description": "Adds subtle time-dependent directional lighting to mature tree canopies.",
   "UniqueID": "Tanzi.CanopyLighting",
   "EntryDll": "CanopyLighting.dll",
   "MinimumApiVersion": "4.0.0"
