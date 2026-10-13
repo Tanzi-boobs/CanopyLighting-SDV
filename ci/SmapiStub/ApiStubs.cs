@@ -17,6 +17,7 @@ public interface IMonitor
 
 public interface IModHelper
 {
+    string DirectoryPath { get; }
     T ReadConfig<T>() where T : new();
     void WriteConfig<T>(T config);
 }
