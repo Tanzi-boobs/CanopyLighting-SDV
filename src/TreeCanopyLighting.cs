@@ -47,11 +47,13 @@ internal static class TreeCanopyLighting
         _config = config;
         _monitor = monitor;
 
-        _shaderPath = FindDynamicShaderEffect(modDirectory);
-        if (_shaderPath is null)
+        // The standalone release bundles this shader inside our own mod folder.
+        // Dynamic Shader is not required at runtime.
+        _shaderPath = Path.Combine(Path.GetFullPath(modDirectory), "assets", "shaders", "ShadowEffect.mgfxo");
+        if (!File.Exists(_shaderPath))
         {
             throw new FileNotFoundException(
-                "Couldn't find DynamicShader/assets/shaders/ShadowEffect.mgfxo. Install Dynamic Shader 1.0.42 or newer beside Canopy Lighting.");
+                "Canopy Lighting's bundled shader is missing: assets/shaders/ShadowEffect.mgfxo. Reinstall the complete CanopyLighting folder.");
         }
 
         _treeType = AccessTools.TypeByName("StardewValley.TerrainFeatures.Tree")
@@ -93,67 +95,7 @@ internal static class TreeCanopyLighting
         _harmony = new Harmony(HarmonyId);
         _harmony.Patch(drawMethod, postfix: new HarmonyMethod(postfix));
 
-        WarnIfBuiltInCanopyIsEnabled(_shaderPath, monitor);
-        monitor.Log("Canopy Lighting will use Dynamic Shader's compiled canopy techniques for oak and pine trees.", LogLevel.Info);
-    }
-
-    private static string? FindDynamicShaderEffect(string modDirectory)
-    {
-        string? modsDirectory = Directory.GetParent(Path.GetFullPath(modDirectory))?.FullName;
-        if (string.IsNullOrEmpty(modsDirectory) || !Directory.Exists(modsDirectory))
-            return null;
-
-        foreach (string folder in Directory.EnumerateDirectories(modsDirectory))
-        {
-            string manifestPath = Path.Combine(folder, "manifest.json");
-            if (!File.Exists(manifestPath))
-                continue;
-
-            try
-            {
-                using JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestPath));
-                if (!document.RootElement.TryGetProperty("UniqueID", out JsonElement uniqueId)
-                    || !string.Equals(uniqueId.GetString(), "Nook.DynamicShader", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string candidate = Path.Combine(folder, "assets", "shaders", "ShadowEffect.mgfxo");
-                if (File.Exists(candidate))
-                    return candidate;
-            }
-            catch
-            {
-                // Ignore unrelated or malformed manifests while searching the Mods folder.
-            }
-        }
-
-        return null;
-    }
-
-    private static void WarnIfBuiltInCanopyIsEnabled(string shaderPath, IMonitor monitor)
-    {
-        try
-        {
-            string shaderDirectory = Path.GetDirectoryName(shaderPath)!;
-            string dynamicShaderDirectory = Path.GetFullPath(Path.Combine(shaderDirectory, "..", ".."));
-            string configPath = Path.Combine(dynamicShaderDirectory, "config.json");
-            if (!File.Exists(configPath))
-                return;
-
-            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(configPath));
-            JsonElement root = document.RootElement;
-            bool oakEnabled = root.TryGetProperty("EnableTreeCanopyLight", out JsonElement oak) && oak.ValueKind == JsonValueKind.True;
-            bool pineEnabled = root.TryGetProperty("EnablePineCanopyLight", out JsonElement pine) && pine.ValueKind == JsonValueKind.True;
-            if (oakEnabled || pineEnabled)
-            {
-                monitor.Log(
-                    "Dynamic Shader's built-in canopy feature is enabled too. Set EnableTreeCanopyLight and EnablePineCanopyLight to false in Dynamic Shader's config.json to prevent both mods drawing the canopy effect twice. Other Dynamic Shader features can remain enabled.",
-                    LogLevel.Warn);
-            }
-        }
-        catch (Exception ex)
-        {
-            monitor.Log("Couldn't inspect Dynamic Shader's canopy toggles: " + ex.Message, LogLevel.Debug);
-        }
+        monitor.Log("Standalone canopy shader loaded from this mod's own assets.", LogLevel.Info);
     }
 
     private static void OnTreeDrawPostfix(object __instance, object[] __args)
