@@ -27,7 +27,7 @@ public sealed class ModEntry : Mod
         }
         catch (Exception ex)
         {
-            Monitor.Log("Couldn't install the Dynamic Shader canopy hook: " + ex.Message, LogLevel.Error);
+            Monitor.Log("Couldn't install the standalone canopy hook: " + ex.Message, LogLevel.Error);
         }
     }
 }
