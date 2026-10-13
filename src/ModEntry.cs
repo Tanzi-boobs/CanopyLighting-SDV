@@ -16,15 +16,25 @@ public sealed class ModEntry : Mod
         try
         {
             TreeCanopyLighting.Install(Config, Monitor, helper.DirectoryPath);
-            RegisterConfigMenu(helper);
-            Monitor.Log(
-                $"Canopy Lighting enabled={Config.Enabled}, strength={Config.OverallStrength:0.00}, broadleaf/other={Config.EnableOakCanopy}, pine={Config.EnablePineCanopy}.",
-                LogLevel.Info);
         }
         catch (Exception ex)
         {
             Monitor.Log("Couldn't install the standalone canopy hook: " + ex.Message, LogLevel.Error);
+            return;
         }
+
+        try
+        {
+            RegisterConfigMenu(helper);
+        }
+        catch (Exception ex)
+        {
+            Monitor.Log("Canopy Lighting is active, but GMCM options couldn't be registered: " + ex.GetType().Name + ": " + ex.Message, LogLevel.Warn);
+        }
+
+        Monitor.Log(
+            $"Canopy Lighting enabled={Config.Enabled}, strength={Config.OverallStrength:0.00}, broadleaf/other={Config.EnableOakCanopy}, pine={Config.EnablePineCanopy}.",
+            LogLevel.Info);
     }
 
     private void RegisterConfigMenu(IModHelper helper)
