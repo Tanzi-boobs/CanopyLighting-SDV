@@ -1,7 +1,7 @@
 {
   "Name": "Canopy Lighting",
   "Author": "Tanzi",
-  "Version": "0.4.0",
+  "Version": "0.4.1",
   "Description": "Standalone canopy lighting using its bundled MonoGame shader.",
   "UniqueID": "Tanzi.CanopyLighting",
   "EntryDll": "CanopyLighting.dll",
