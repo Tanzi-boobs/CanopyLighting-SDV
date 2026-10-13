@@ -12,5 +12,6 @@
       <HintPath>ci/SmapiStub/bin/Release/net6.0/StardewModdingAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Compile Remove="ci/**/*.cs" />
   </ItemGroup>
 </Project>
