@@ -9,14 +9,14 @@ namespace CanopyLighting;
 /// </summary>
 internal interface IGenericModConfigMenuApi
 {
-    void Register(IManifest mod, Action reset, Action save, bool titleScreenOnly = false);
+    void Register(object mod, Action reset, Action save, bool titleScreenOnly = false);
 
-    void AddSectionTitle(IManifest mod, Func<string> text, Func<string>? tooltip = null);
+    void AddSectionTitle(object mod, Func<string> text, Func<string>? tooltip = null);
 
-    void AddParagraph(IManifest mod, Func<string> text);
+    void AddParagraph(object mod, Func<string> text);
 
     void AddBoolOption(
-        IManifest mod,
+        object mod,
         Func<bool> getValue,
         Action<bool> setValue,
         Func<string> name,
@@ -24,7 +24,7 @@ internal interface IGenericModConfigMenuApi
         string? fieldId = null);
 
     void AddNumberOption(
-        IManifest mod,
+        object mod,
         Func<float> getValue,
         Action<float> setValue,
         Func<string> name,
