@@ -7,15 +7,4 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup>
-    <Reference Include="StardewModdingAPI">
-      <HintPath>refs/StardewModdingAPI.dll</HintPath>
-    </Reference>
-    <Reference Include="Stardew Valley">
-      <HintPath>refs/Stardew Valley.dll</HintPath>
-    </Reference>
-    <Reference Include="MonoGame.Framework">
-      <HintPath>refs/MonoGame.Framework.dll</HintPath>
-    </Reference>
-  </ItemGroup>
 </Project>
