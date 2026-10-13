@@ -15,8 +15,6 @@ namespace CanopyLighting;
 internal static class TreeCanopyLighting
 {
     private const string HarmonyId = "Tanzi.CanopyLighting";
-    private const int OakTreeType = 1;
-    private const int PineTreeType = 3;
     private static readonly BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
     private static ModConfig? _config;
@@ -28,7 +26,11 @@ internal static class TreeCanopyLighting
     private static FieldInfo? _texture;
     private static FieldInfo? _growthStage;
     private static FieldInfo? _treeKind;
+    private static FieldInfo? _hasSeed;
+    private static FieldInfo? _hasMoss;
+    private static FieldInfo? _wasShakenToday;
     private static FieldInfo? _stump;
+    private static MethodInfo? _tryGetTreeData;
     private static FieldInfo? _alpha;
     private static FieldInfo? _shakeRotation;
     private static FieldInfo? _viewport;
@@ -64,6 +66,21 @@ internal static class TreeCanopyLighting
         _texture = AccessTools.Field(_treeType, "texture");
         _growthStage = AccessTools.Field(_treeType, "growthStage");
         _treeKind = AccessTools.Field(_treeType, "treeType");
+        _hasSeed = AccessTools.Field(_treeType, "hasSeed");
+        _hasMoss = AccessTools.Field(_treeType, "hasMoss");
+        _wasShakenToday = AccessTools.Field(_treeType, "wasShakenToday");
+        _tryGetTreeData = _treeType
+            .GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "TryGetData")
+                    return false;
+
+                ParameterInfo[] parameters = method.GetParameters();
+                return parameters.Length == 2
+                    && parameters[0].ParameterType == typeof(string)
+                    && parameters[1].ParameterType.IsByRef;
+            });
         _stump = AccessTools.Field(_treeType, "stump");
         _alpha = AccessTools.Field(_treeType, "alpha");
         _shakeRotation = AccessTools.Field(_treeType, "shakeRotation");
@@ -119,10 +136,13 @@ internal static class TreeCanopyLighting
             if (Convert.ToBoolean(ReadNetValue(__instance, _stump, false)))
                 return;
 
-            int treeKind = Convert.ToInt32(ReadNetValue(__instance, _treeKind, 0));
-            bool isOak = treeKind == OakTreeType;
-            bool isPine = treeKind == PineTreeType;
-            if ((!isOak || !_config.EnableOakCanopy) && (!isPine || !_config.EnablePineCanopy))
+            string treeKind = Convert.ToString(ReadNetValue(__instance, _treeKind, "1")) ?? "1";
+            bool isPine = treeKind == "3";
+
+            // Use the pine silhouette for pine trees; use the broadleaf canopy profile
+            // for every other mature vanilla/custom Wild Tree type. This covers maple,
+            // mahogany, palm, mushroom, mystic and seasonal variants too.
+            if (isPine ? !_config.EnablePineCanopy : !_config.EnableOakCanopy)
                 return;
 
             int time = Convert.ToInt32(_timeOfDay.GetValue(null) ?? 1200);
@@ -163,6 +183,23 @@ internal static class TreeCanopyLighting
             if (sourceWidth < 2 || sourceHeight < 2 || textureWidth < 1 || textureHeight < 1)
                 return;
 
+            // Match Tree.draw's selected canopy tile, otherwise seed-ready/untouched
+            // variants and mossy canopies would receive the lighting overlay from
+            // the wrong atlas cell and appear unchanged or misaligned.
+            if (TryGetTreeData(treeKind, out object? treeData))
+            {
+                bool hasSeed = Convert.ToBoolean(ReadNetValue(__instance, _hasSeed, false));
+                bool hasMoss = Convert.ToBoolean(ReadNetValue(__instance, _hasMoss, false));
+                bool wasShakenToday = Convert.ToBoolean(ReadNetValue(__instance, _wasShakenToday, false));
+                bool useAlternateWhenSeedReady = ReadBooleanMember(treeData!, "UseAlternateSpriteWhenSeedReady", false);
+                bool useAlternateWhenNotShaken = ReadBooleanMember(treeData!, "UseAlternateSpriteWhenNotShaken", false);
+
+                sourceX = (useAlternateWhenSeedReady && hasSeed)
+                    || (useAlternateWhenNotShaken && !wasShakenToday) ? 48 : 0;
+                if (hasMoss)
+                    sourceX = 96;
+            }
+
             bool flipped = Convert.ToBoolean(ReadNetValue(__instance, AccessTools.Field(_treeType!, "flipped"), false));
             int left = ToChannel(sourceX / (float)textureWidth);
             int right = ToChannel((sourceX + sourceWidth) / (float)textureWidth);
@@ -198,7 +235,7 @@ internal static class TreeCanopyLighting
                 return;
 
             EnsureEffectLoaded();
-            SetCanopyParameters(isOak, hour, solar);
+            SetCanopyParameters(isPine, hour, solar);
 
             DrawCanopyWithEffect(
                 batch,
@@ -221,6 +258,18 @@ internal static class TreeCanopyLighting
                     LogLevel.Warn);
             }
         }
+    }
+
+    private static bool TryGetTreeData(string treeId, out object? data)
+    {
+        data = null;
+        if (_tryGetTreeData is null)
+            return false;
+
+        object?[] arguments = { treeId, null };
+        bool found = Convert.ToBoolean(_tryGetTreeData.Invoke(null, arguments) ?? false);
+        data = arguments[1];
+        return found && data is not null;
     }
 
     private static void EnsureEffectLoaded()
@@ -246,7 +295,7 @@ internal static class TreeCanopyLighting
             ?? throw new InvalidOperationException("MonoGame failed to create the bundled canopy Effect.");
     }
 
-    private static void SetCanopyParameters(bool isOak, float hour, float solar)
+    private static void SetCanopyParameters(bool isPine, float hour, float solar)
     {
         if (_effect is null || _config is null)
             throw new InvalidOperationException("The canopy shader has not been loaded.");
@@ -258,12 +307,12 @@ internal static class TreeCanopyLighting
             throw new InvalidOperationException("Couldn't find MonoGame's Vector2 type.");
 
         object sunDirection = Activator.CreateInstance(vectorType, new object[] { sunX, -0.55f })!;
-        string technique = isOak ? "TreeCanopyLight" : "TextureGuidedPineCanopyLight";
+        string technique = isPine ? "TextureGuidedPineCanopyLight" : "TreeCanopyLight";
         SetCurrentTechnique(technique);
         SetEffectParameter("TreeCanopyLightSunDirection", sunDirection);
 
         float strength = Math.Clamp(_config.OverallStrength, 0f, 2f) * solar;
-        if (isOak)
+        if (!isPine)
         {
             SetVector4("TreeCanopyLightColor", 1.05f, 1.00f, 0.90f, 1f);
             SetVector4("TreeCanopyShadowColor", 0.78f, 0.84f, 0.92f, 1f);
@@ -292,6 +341,11 @@ internal static class TreeCanopyLighting
         object effects)
     {
         BatchState state = CaptureBatchState(batch);
+
+        // SpriteBatch doesn't consistently upload MatrixTransform for a custom Effect
+        // on MonoGame Android. Set it explicitly or the canopy pass can be invisible.
+        SetEffectParameter("MatrixTransform", state.TransformMatrix);
+
         dynamic spriteBatch = batch;
         bool batchOpen = true;
 
