@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+ <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <RootNamespace>CanopyLighting</RootNamespace>
@@ -6,9 +6,16 @@
     <Version>0.1.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <EnableModDeploy>false</EnableModDeploy>
-    <EnableModZip>false</EnableModZip>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="StardewModdingAPI">
+      <HintPath>refs/StardewModdingAPI.dll</HintPath>
+    </Reference>
+    <Reference Include="Stardew Valley">
+      <HintPath>refs/Stardew Valley.dll</HintPath>
+    </Reference>
+    <Reference Include="MonoGame.Framework">
+      <HintPath>refs/MonoGame.Framework.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>
