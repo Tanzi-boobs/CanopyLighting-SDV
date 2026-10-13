@@ -1,21 +1,17 @@
 # CanopyLighting-SDV
 
-Standalone Stardew Valley 1.6 SMAPI mod project for a future canopy-lighting effect.
+A standalone Stardew Valley 1.6 SMAPI mod that adds time-dependent light and shade to mature tree crowns.
 
-## Build on GitHub
-Every push to `main` runs the **Build Canopy Lighting** workflow.
-Open **Actions → Build Canopy Lighting**, select a successful run, and download
-the `CanopyLighting` artifact. Extract it and place the `CanopyLighting`
-folder in the game's `Mods` directory.
+## What it does
+- Applies a warm, directional tint to the tree canopy itself, with the light direction and intensity changing through the day.
+- Fades the effect in after sunrise and out around sunset.
+- Uses the tree's own canopy texture as the draw mask, so the overlay should stay within the leaf sprite instead of painting rectangles onto grass, buildings, or nearby characters.
+- Exposes `Enabled`, `Strength`, and `Warmth` in `config.json`.
 
-## Current status
-The current build is a **loader/configuration scaffold only**. It checks the
-SMAPI entry point and config plumbing; it does not yet render canopy lighting.
-The CI build uses a compile-only SMAPI API shim, so a successful build is not
-proof of runtime compatibility. Test with Stardew Valley 1.6 and Cinderbox
-before treating this as a working mod.
+## Install
+Download the `CanopyLighting` artifact from the latest successful **Build Canopy Lighting** run under [GitHub Actions](https://github.com/Tanzi-boobs/CanopyLighting-SDV/actions). Extract the `CanopyLighting` folder into Stardew Valley's `Mods` folder.
 
-## Planned effect
-Add a canopy-specific mask and lighting pass for mature tree crowns. Avoid
-classifying all green pixels, which could unintentionally affect grass, NPC
-clothing, crops, and buildings.
+## Testing status
+The cloud workflow compiles against a compile-only SMAPI API shim because it runs without a Stardew Valley installation. A successful CI build verifies C# compilation and packaging, but **does not replace in-game testing**. The first test should check that the overlay aligns with the canopy, stays behind the trunk, fades correctly while the player walks behind a tree, and behaves on Cinderbox Android.
+
+If you test it, please send the SMAPI log and a screenshot of a mature tree in daylight and near sunset. That will help tune layer depth, tint strength, and mobile rendering compatibility.
