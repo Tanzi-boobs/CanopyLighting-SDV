@@ -228,7 +228,7 @@ internal static class TreeCanopyLighting
         if (_effect is not null)
             return;
         if (_effectInitializationAttempted)
-            throw new InvalidOperationException("The Dynamic Shader effect could not be initialized earlier.");
+            throw new InvalidOperationException("The bundled canopy effect could not be initialized earlier.");
         _effectInitializationAttempted = true;
 
         if (_gameType is null || string.IsNullOrEmpty(_shaderPath) || !File.Exists(_shaderPath))
@@ -243,7 +243,7 @@ internal static class TreeCanopyLighting
             ?? throw new InvalidOperationException("Couldn't find MonoGame's Effect type.");
 
         _effect = Activator.CreateInstance(effectType, new object[] { graphicsDevice, File.ReadAllBytes(_shaderPath) })
-            ?? throw new InvalidOperationException("MonoGame failed to create Dynamic Shader's Effect.");
+            ?? throw new InvalidOperationException("MonoGame failed to create the bundled canopy Effect.");
     }
 
     private static void SetCanopyParameters(bool isOak, float hour, float solar)
@@ -561,7 +561,8 @@ internal static class TreeCanopyLighting
 
     private static float GetDaylightFactor(float hour)
     {
-        float sunrise = SmoothStep(6.5f, 7.5f, hour);
+        // Begin gradually at dawn so the effect is already visible at the game's 6:00 start.
+        float sunrise = SmoothStep(5.5f, 7.0f, hour);
         float sunset = 1f - SmoothStep(16.5f, 18.2f, hour);
         return Math.Clamp(sunrise * sunset, 0f, 1f);
     }
