@@ -1,22 +1,21 @@
 # Canopy Lighting
 
-A Stardew Valley 1.6 SMAPI mod that applies directional lighting directly to mature wild-tree canopies. Dynamic Shader is **not required**.
+A Stardew Valley 1.6 SMAPI mod that applies directional lighting to mature wild-tree canopies. Dynamic Shader is **not required** at runtime.
 
 ## Behavior
 
-- Loads \`assets/shaders/ShadowEffect.mgfxo\` from this mod's own folder.
-- Uses the texture-guided pine technique for mature pine trees and the broadleaf canopy technique for every other mature \`Tree\` type, including oak, maple, mahogany, palm, mushroom and mystic trees.
-- Mirrors Stardew 1.6.15's selected canopy atlas cell for seed-ready, untouched and mossy variants.
-- Applies the full SpriteBatch transform and viewport projection matrix to the custom shader, which is required for custom effects to render in screen space.
-- Updates the sun direction over the in-game day and fades the lighting around dawn and dusk.
-- Renders only a canopy-lighting pass. It does not draw a ground shadow; the vanilla circular shadow under each tree is left unchanged.
-- Registers settings with Generic Mod Config Menu (GMCM) when GMCM is installed. GMCM is optional; settings can also be edited in \`config.json\`.
+- Loads `assets/shaders/ShadowEffect.mgfxo` from this mod's own folder.
+- Uses the texture-guided pine technique for mature pine trees and the broadleaf canopy technique for other mature `Tree` types.
+- Mirrors the Stardew tree canopy atlas cell for seed-ready, untouched, and mossy variants.
+- Applies a SpriteBatch transform and viewport projection to the custom effect.
+- Renders only a canopy-lighting pass; it does not draw an additional ground shadow.
+- Registers GMCM options through reflection to avoid an Android SMAPI `IManifest` interface-loading error. GMCM remains optional.
 
 ## Install
 
-Extract the complete \`CanopyLighting\` folder to \`Mods\`. It must contain:
+Extract the complete `CanopyLighting` folder to `Mods`. It must contain:
 
-\`\`\`text
+```text
 CanopyLighting/
 ├── manifest.json
 ├── config.json
@@ -24,17 +23,21 @@ CanopyLighting/
 └── assets/
     └── shaders/
         └── ShadowEffect.mgfxo
-\`\`\`
+```
 
-The personal-use ZIP includes the compiled shader supplied with the user's Dynamic Shader archive. That binary is intentionally not committed to this public repository. GitHub Actions therefore uploads a DLL-only validation artifact, not a complete installable ZIP.
+The personal-use ZIP includes the compiled shader supplied by the user. The binary is intentionally not committed to this public repository, so GitHub Actions uploads a DLL-only validation artifact rather than a complete installable ZIP.
 
 ## GMCM options
 
-- Enable canopy lighting and overall strength.
-- Enable/disable the broadleaf profile (all non-pine mature wild-tree types) and pine profile separately.
-- Set broadleaf light/shading, pine light/shading, and pine rim-lighting strengths.
-- Canopy shading strength affects only tree-canopy pixels; it does not add ground shadows.
+- Enable/disable canopy lighting and set overall strength.
+- Toggle broadleaf/non-pine trees and pine trees separately.
+- Adjust broadleaf light and canopy shading.
+- Adjust pine light, canopy shading, and rim lighting.
 
-## Diagnostics and testing
+Canopy shading changes canopy pixels only; it does not add ground shadows.
 
-The log reports whether the Tree.draw hook executes, when it reaches a mature tree, and when a shader overlay is successfully drawn. These distinguish shader initialization from actual rendering. GitHub Actions checks C# compilation using a compile-only SMAPI API shim; live MonoGame rendering still needs to be verified in-game.
+## Diagnostics
+
+The log reports when `Tree.draw` executes, up to 12 samples of outdoor state, tree type, growth stage, and stump state, when a mature tree reaches the shader pass, and when the first overlay succeeds. These messages distinguish filters, API setup, and rendering.
+
+CI validates C# compilation using a compile-only SMAPI API shim. It does not prove that the shader renders correctly at runtime.
