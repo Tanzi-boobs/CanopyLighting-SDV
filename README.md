@@ -1,17 +1,32 @@
-# CanopyLighting-SDV
+# Canopy Lighting
 
-A standalone Stardew Valley 1.6 SMAPI mod that adds time-dependent light and shade to mature tree crowns.
+A Stardew Valley 1.6 SMAPI mod that invokes the oak and pine canopy techniques from the locally installed Dynamic Shader mod.
 
-## What it does
-- Applies a warm, directional tint to the tree canopy itself, with the light direction and intensity changing through the day.
-- Fades the effect in after sunrise and out around sunset.
-- Uses the tree's own canopy texture as the draw mask, so the overlay should stay within the leaf sprite instead of painting rectangles onto grass, buildings, or nearby characters.
-- Exposes `Enabled`, `Strength`, and `Warmth` in `config.json`.
+## How it works
 
-## Install
-Download the `CanopyLighting` artifact from the latest successful **Build Canopy Lighting** run under [GitHub Actions](https://github.com/Tanzi-boobs/CanopyLighting-SDV/actions). Extract the `CanopyLighting` folder into Stardew Valley's `Mods` folder.
+- Loads \`ShadowEffect.mgfxo\` from the user's installed \`Nook.DynamicShader\` folder at runtime.
+- Uses the \`TreeCanopyLight\` technique for mature oak trees and \`TextureGuidedPineCanopyLight\` for mature pine trees.
+- Sets the sun direction from the in-game time and fades the effect around sunrise and sunset.
+- Does **not** include or redistribute Dynamic Shader's compiled shader asset in this repository or in the Canopy Lighting ZIP. Dynamic Shader must remain installed.
+
+## Important setup
+
+Because Canopy Lighting calls the same two shader techniques, avoid drawing the built-in canopy effect twice. In Dynamic Shader's own \`config.json\`, set these two values to \`false\`:
+
+\`\`\`json
+"EnableTreeCanopyLight": false,
+"EnablePineCanopyLight": false
+\`\`\`
+
+Other Dynamic Shader settings can stay enabled. Canopy Lighting checks those values and logs a warning if either built-in canopy option is still on.
+
+## Configuration
+
+- \`Enabled\`: turns this mod's canopy pass on or off.
+- \`OverallStrength\`: master multiplier from 0 to 2.
+- \`EnableOakCanopy\` and \`EnablePineCanopy\`: independently toggle oak and pine.
+- \`OakLightStrength\`, \`OakShadowStrength\`, \`PineLightStrength\`, \`PineShadowStrength\`, \`PineRimStrength\`: effect strengths, each clamped to 0–5.
 
 ## Testing status
-The cloud workflow compiles against a compile-only SMAPI API shim because it runs without a Stardew Valley installation. A successful CI build verifies C# compilation and packaging, but **does not replace in-game testing**. The first test should check that the overlay aligns with the canopy, stays behind the trunk, fades correctly while the player walks behind a tree, and behaves on Cinderbox Android.
 
-If you test it, please send the SMAPI log and a screenshot of a mature tree in daylight and near sunset. That will help tune layer depth, tint strength, and mobile rendering compatibility.
+The CI pipeline builds against a compile-only SMAPI API shim because the GitHub runner does not include the game installation. A successful build confirms compilation and packaging; it does **not** prove the effect works in-game. Test first on a mature oak and pine outdoors, then check camera movement, the player walking behind a canopy, and whether other sprites retain the correct draw order. Send the latest SMAPI log and screenshots if a runtime error occurs.
