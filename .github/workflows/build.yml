@@ -18,19 +18,14 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
-      - name: Download SMAPI source and build its API assembly
-        shell: bash
+      - name: Prepare placeholder game folder
         run: |
-          git clone --depth 1 --branch develop https://github.com/Pathoschild/SMAPI.git /tmp/smapi
-          mkdir -p /tmp/game refs
-          touch "/tmp/game/Stardew Valley.dll" "/tmp/game/StardewValley.GameData.dll" "/tmp/game/BmFont.dll" "/tmp/game/GalaxyCSharp.dll" "/tmp/game/Lidgren.Network.dll" "/tmp/game/MonoGame.Framework.dll" "/tmp/game/SkiaSharp.dll" "/tmp/game/xTile.dll"
-          echo '<Project><PropertyGroup><GamePath>/tmp/game</GamePath></PropertyGroup></Project>' > "$HOME/stardewvalley.targets"
-          dotnet build /tmp/smapi/src/SMAPI/SMAPI.csproj -p:GamePath=/tmp/game -p:EnableModDeploy=false -p:EnableModZip=false
-          find /tmp/smapi/src/SMAPI/bin -type f -name 'StardewModdingAPI.dll' -exec cp {} refs/ \;
-          test -f refs/StardewModdingAPI.dll
+          mkdir -p /tmp/stardew
+          touch "/tmp/stardew/Stardew Valley.dll"
+          echo '<Project><PropertyGroup><GamePath>/tmp/stardew</GamePath></PropertyGroup></Project>' > "$HOME/stardewvalley.targets"
 
       - name: Build mod
-        run: dotnet build CanopyLighting.csproj --configuration Release -p:EnableModDeploy=false -p:EnableModZip=false
+        run: dotnet build CanopyLighting.csproj --configuration Release
 
       - name: Package
         shell: bash
