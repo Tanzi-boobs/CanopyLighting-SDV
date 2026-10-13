@@ -2,7 +2,7 @@ using StardewModdingAPI;
 
 namespace CanopyLighting;
 
-/// <summary>Loads the Dynamic Shader-backed canopy-lighting effect.</summary>
+/// <summary>Loads this mod's standalone canopy-only lighting effect.</summary>
 public sealed class ModEntry : Mod
 {
     private ModConfig Config = new();
@@ -22,7 +22,7 @@ public sealed class ModEntry : Mod
         {
             TreeCanopyLighting.Install(Config, Monitor, helper.DirectoryPath);
             Monitor.Log(
-                $"Canopy Lighting enabled={Config.Enabled}, strength={Config.OverallStrength:0.00}, oak={Config.EnableOakCanopy}, pine={Config.EnablePineCanopy}.",
+                $"Canopy Lighting enabled={Config.Enabled}, strength={Config.OverallStrength:0.00}, broadleaf/other={Config.EnableOakCanopy}, pine={Config.EnablePineCanopy}.",
                 LogLevel.Info);
         }
         catch (Exception ex)
