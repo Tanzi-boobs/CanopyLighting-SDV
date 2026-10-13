@@ -26,18 +26,10 @@ jobs:
       - name: Build mod
         run: dotnet build CanopyLighting.csproj --configuration Release
 
-      - name: Package
-        shell: bash
-        run: |
-          mkdir -p artifact/CanopyLighting
-          cp manifest.json artifact/CanopyLighting/
-          cp bin/Release/net6.0/CanopyLighting.dll artifact/CanopyLighting/
-          cp config.json artifact/CanopyLighting/ 2>/dev/null || true
-          cd artifact
-          zip -r ../CanopyLighting.zip CanopyLighting
-
+      # The compiled shader stays out of this public repository.
+      # CI therefore publishes only the DLL for validation; this is not an installable mod ZIP.
       - uses: actions/upload-artifact@v4
         with:
-          name: CanopyLighting
-          path: CanopyLighting.zip
+          name: CanopyLighting-DLL-validation-only
+          path: bin/Release/net6.0/CanopyLighting.dll
           if-no-files-found: error
