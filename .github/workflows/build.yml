@@ -20,8 +20,13 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
+      - name: Configure CI references
+        run: |
+          dotnet add CanopyLighting.csproj package StardewModdingAPI.Framework --version 4.1.10 || true
+          dotnet add CanopyLighting.csproj package Pathoschild.Stardew.ModBuildConfig --version 4.4.0 || true
+
       - name: Build mod
-        run: dotnet build CanopyLighting.csproj --configuration Release
+        run: dotnet build CanopyLighting.csproj --configuration Release -p:EnableModDeploy=false -p:EnableModZip=false -p:GamePath=/tmp/stardew-stub
 
       - name: Package mod
         shell: bash
@@ -29,7 +34,6 @@ jobs:
           mkdir -p artifact/CanopyLighting
           cp manifest.json artifact/CanopyLighting/
           find bin/Release -type f -name 'CanopyLighting.dll' -exec cp {} artifact/CanopyLighting/ \;
-          cp config.json artifact/CanopyLighting/ 2>/dev/null || true
           cd artifact
           zip -r ../CanopyLighting.zip CanopyLighting
 
