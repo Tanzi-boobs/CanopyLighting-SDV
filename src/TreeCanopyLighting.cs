@@ -16,7 +16,6 @@ internal static class TreeCanopyLighting
     private const string HarmonyId = "Tanzi.CanopyLighting";
     private const int Strips = 6;
     private static readonly BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    private static readonly BindingFlags StaticFlags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
 
     private static ModConfig? _config;
     private static IMonitor? _monitor;
