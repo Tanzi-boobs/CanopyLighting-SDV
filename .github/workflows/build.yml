@@ -25,7 +25,7 @@ jobs:
           touch "/tmp/stardew/Stardew Valley.dll"
           # Prevent ModBuildConfig from requiring a local installation of SMAPI.
           # The project references the SMAPI API through a small compile-only reference assembly.
-          cat > /tmp/stardewvalley.targets <<'EOF'
+          cat > "$HOME/stardewvalley.targets" <<'EOF'
           <Project>
             <PropertyGroup>
               <GamePath>/tmp/stardew</GamePath>
