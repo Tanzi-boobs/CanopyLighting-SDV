@@ -1,0 +1,9 @@
+{
+  "Name": "Canopy Lighting",
+  "Author": "Tanzi",
+  "Version": "0.1.0",
+  "Description": "A standalone canopy-lighting prototype for Stardew Valley 1.6.",
+  "UniqueID": "Tanzi.CanopyLighting",
+  "EntryDll": "CanopyLighting.dll",
+  "MinimumApiVersion": "4.0.0"
+}
