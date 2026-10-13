@@ -18,14 +18,9 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
-      - name: Download SMAPI release
-        shell: bash
+      - name: Download SMAPI source release metadata
         run: |
-          curl -fL https://github.com/Pathoschild/SMAPI/releases/download/4.5.2/SMAPI-4.5.2-installer.zip -o /tmp/smapi.zip
-          unzip -q /tmp/smapi.zip -d /tmp/smapi-release
-          find /tmp/smapi-release -type f -name 'StardewModdingAPI.dll' -print
-          find /tmp/smapi-release -type f -name 'StardewModdingAPI.dll' -exec cp {} refs/ \; || true
-          test -f refs/StardewModdingAPI.dll
+          git clone --depth 1 --branch 4.5.2 https://github.com/Pathoschild/SMAPI.git /tmp/smapi
 
       - name: Build
         run: dotnet build CanopyLighting.csproj --configuration Release
