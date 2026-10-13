@@ -2,11 +2,7 @@ using StardewModdingAPI;
 
 namespace CanopyLighting;
 
-/// <summary>
-/// Canopy Lighting prototype.
-/// The current version validates the SMAPI loading path and configuration;
-/// canopy rendering is not implemented yet.
-/// </summary>
+/// <summary>Loads the standalone canopy-lighting effect.</summary>
 public sealed class ModEntry : Mod
 {
     private ModConfig Config = new();
@@ -14,10 +10,20 @@ public sealed class ModEntry : Mod
     public override void Entry(IModHelper helper)
     {
         Config = helper.ReadConfig<ModConfig>();
+        Config.Strength = Math.Clamp(Config.Strength, 0f, 1f);
+        Config.Warmth = Math.Clamp(Config.Warmth, 0f, 1f);
         helper.WriteConfig(Config);
 
-        Monitor.Log(
-            "Canopy Lighting scaffold loaded. Canopy lighting effects are not implemented in this build.",
-            LogLevel.Warn);
+        try
+        {
+            TreeCanopyLighting.Install(Config, Monitor);
+            Monitor.Log(
+                $"Canopy Lighting enabled={Config.Enabled}, strength={Config.Strength:0.00}, warmth={Config.Warmth:0.00}.",
+                LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            Monitor.Log("Couldn't install the canopy lighting hook: " + ex.Message, LogLevel.Error);
+        }
     }
 }
