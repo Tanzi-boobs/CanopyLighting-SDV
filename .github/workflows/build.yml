@@ -26,6 +26,7 @@ jobs:
           unzip -l /tmp/smapi.zip | head -80
           unzip -o /tmp/smapi.zip -d /tmp/smapi-release
           find /tmp/smapi-release -type f \( -name 'StardewModdingAPI.dll' -o -name 'Stardew Valley.dll' -o -name 'MonoGame.Framework.dll' \) -exec cp {} refs/ \;
+          find /tmp/smapi-release -type f -iname '*StardewModdingAPI*.dll' -o -iname 'StardewModdingAPI.dll' | head -50
           ls -la refs
 
       - name: Build
