@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.3.3" />
     <Reference Include="StardewModdingAPI">
       <HintPath>ci/SmapiStub/bin/Release/net6.0/StardewModdingAPI.dll</HintPath>
       <Private>false</Private>
