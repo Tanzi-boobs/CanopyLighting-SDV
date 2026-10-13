@@ -306,7 +306,7 @@ internal static class TreeCanopyLighting
 
         float dayProgress = Math.Clamp((hour - 6f) / 12f, 0f, 1f);
         float sunX = MathF.Cos(dayProgress * MathF.PI);
-        object? vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2");
+        Type? vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2");
         if (vectorType is null)
             throw new InvalidOperationException("Couldn't find MonoGame's Vector2 type.");
 
