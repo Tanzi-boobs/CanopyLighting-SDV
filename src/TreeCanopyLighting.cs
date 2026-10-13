@@ -71,6 +71,9 @@ internal static class TreeCanopyLighting
         _currentLocation = AccessTools.Field(_gameType, "currentLocation");
         _timeOfDay = AccessTools.Field(_gameType, "timeOfDay");
 
+        // Stardew Valley 1.6.15 uses TerrainFeature.draw(SpriteBatch), with the
+        // tree tile exposed by the Tree.Tile property. The older two-argument
+        // signature doesn't exist in this runtime (including Cinderbox Android).
         MethodInfo? drawMethod = _treeType
             .GetMethods(InstanceFlags)
             .FirstOrDefault(method =>
@@ -79,8 +82,8 @@ internal static class TreeCanopyLighting
                     return false;
 
                 ParameterInfo[] parameters = method.GetParameters();
-                return parameters.Length == 2
-                    && parameters[1].ParameterType.FullName == "Microsoft.Xna.Framework.Vector2";
+                return parameters.Length == 1
+                    && parameters[0].ParameterType.FullName == "Microsoft.Xna.Framework.Graphics.SpriteBatch";
             });
 
         if (drawMethod is null)
@@ -104,7 +107,7 @@ internal static class TreeCanopyLighting
 
         try
         {
-            if (__args.Length < 2 || _gameType is null || _currentLocation is null || _viewport is null || _timeOfDay is null)
+            if (__args.Length < 1 || _gameType is null || _currentLocation is null || _viewport is null || _timeOfDay is null)
                 return;
 
             object? location = _currentLocation.GetValue(null);
@@ -176,7 +179,10 @@ internal static class TreeCanopyLighting
                 rectangleType,
                 new object[] { sourceX, sourceY, sourceWidth, sourceHeight })!;
 
-            object tile = __args[1];
+            object? tile = ReadMember(__instance, "Tile");
+            if (tile is null)
+                return;
+
             float tileX = ReadFloatMember(tile, "X");
             float tileY = ReadFloatMember(tile, "Y");
             float viewX = ReadFloatMember(viewport, "X");
