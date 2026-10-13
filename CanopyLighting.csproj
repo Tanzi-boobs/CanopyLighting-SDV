@@ -8,8 +8,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="StardewModdingAPI">
-      <HintPath>refs/StardewModdingAPI.dll</HintPath>
-    </Reference>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
   </ItemGroup>
 </Project>
