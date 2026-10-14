@@ -126,7 +126,7 @@ internal static class TreeCanopyLighting
         monitor.Log("Found bundled canopy shader asset and installed the Tree.draw hook.", LogLevel.Info);
     }
 
-    private static void OnTreeDrawPostfix(object __instance, object[] __args)
+    private static void OnTreeDrawPostfix(object __instance, object __0)
     {
         if (_runtimeDisabled || _config is null || !_config.Enabled || _config.OverallStrength <= 0.001f)
             return;
@@ -139,8 +139,19 @@ internal static class TreeCanopyLighting
 
         try
         {
-            if (__args.Length < 1 || _gameType is null || _currentLocation is null || _viewport is null || _timeOfDay is null)
+            if (__0 is null)
+            {
+                _monitor?.Log("Canopy hook received a null SpriteBatch argument.", LogLevel.Warn);
                 return;
+            }
+
+            if (_gameType is null || _currentLocation is null || _viewport is null || _timeOfDay is null)
+            {
+                _monitor?.Log(
+                    $"Canopy hook binding check failed: Game1={_gameType is not null}, currentLocation={_currentLocation is not null}, viewport={_viewport is not null}, timeOfDay={_timeOfDay is not null}.",
+                    LogLevel.Warn);
+                return;
+            }
 
             object? location = _currentLocation.GetValue(null);
             bool outdoors = location is not null && ReadBooleanMember(location, "IsOutdoors", false);
@@ -263,7 +274,7 @@ internal static class TreeCanopyLighting
             object origin = Activator.CreateInstance(vectorType, new object[] { 24f, 96f })!;
             object effects = Enum.ToObject(effectsType, flipped ? 1 : 0);
 
-            object? batch = __args[0];
+            object? batch = __0;
             if (batch is null)
                 return;
 
@@ -340,7 +351,9 @@ internal static class TreeCanopyLighting
             throw new InvalidOperationException("The canopy shader has not been loaded.");
 
         float dayProgress = Math.Clamp((hour - 6f) / 12f, 0f, 1f);
-        float sunX = MathF.Cos(dayProgress * MathF.PI);
+        // Match the reference canopy look: morning light enters from screen-left,
+        // then crosses overhead and moves to screen-right in the afternoon.
+        float sunX = -MathF.Cos(dayProgress * MathF.PI);
         Type? vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2");
         if (vectorType is null)
             throw new InvalidOperationException("Couldn't find MonoGame's Vector2 type.");
