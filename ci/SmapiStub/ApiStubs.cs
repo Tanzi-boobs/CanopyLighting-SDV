@@ -18,6 +18,7 @@ public interface IManifest
 
 public interface IModRegistry
 {
+    object? GetApi(string uniqueID);
     T? GetApi<T>(string uniqueID) where T : class;
 }
 
