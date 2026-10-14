@@ -34,7 +34,6 @@ internal static class TreeCanopyLighting
     private static FieldInfo? _alpha;
     private static FieldInfo? _shakeRotation;
     private static FieldInfo? _viewport;
-    private static FieldInfo? _currentLocation;
     private static FieldInfo? _timeOfDay;
 
     private static string? _shaderPath;
@@ -42,6 +41,7 @@ internal static class TreeCanopyLighting
     private static bool _effectInitializationAttempted;
     private static bool _runtimeDisabled;
     private static bool _loggedRuntimeFailure;
+    private static bool _loggedBindingFailure;
     private static bool _loggedHookExecution;
     private static bool _loggedMatureCandidate;
     private static bool _loggedSuccessfulRender;
@@ -94,7 +94,6 @@ internal static class TreeCanopyLighting
         _alpha = AccessTools.Field(_treeType, "alpha");
         _shakeRotation = AccessTools.Field(_treeType, "shakeRotation");
         _viewport = AccessTools.Field(_gameType, "viewport");
-        _currentLocation = AccessTools.Field(_gameType, "currentLocation");
         _timeOfDay = AccessTools.Field(_gameType, "timeOfDay");
 
         // Stardew Valley 1.6.15 uses TerrainFeature.draw(SpriteBatch), with the
@@ -145,15 +144,21 @@ internal static class TreeCanopyLighting
                 return;
             }
 
-            if (_gameType is null || _currentLocation is null || _viewport is null || _timeOfDay is null)
+            if (_gameType is null || _viewport is null || _timeOfDay is null)
             {
-                _monitor?.Log(
-                    $"Canopy hook binding check failed: Game1={_gameType is not null}, currentLocation={_currentLocation is not null}, viewport={_viewport is not null}, timeOfDay={_timeOfDay is not null}.",
-                    LogLevel.Warn);
+                if (!_loggedBindingFailure)
+                {
+                    _loggedBindingFailure = true;
+                    _monitor?.Log(
+                        $"Canopy hook binding check failed: Game1={_gameType is not null}, viewport={_viewport is not null}, timeOfDay={_timeOfDay is not null}.",
+                        LogLevel.Warn);
+                }
                 return;
             }
 
-            object? location = _currentLocation.GetValue(null);
+            // In some Stardew/SMAPI Android builds, currentLocation is exposed as a
+            // property instead of a field. Resolve either form at runtime.
+            object? location = ReadStaticMember(_gameType, "currentLocation");
             bool outdoors = location is not null && ReadBooleanMember(location, "IsOutdoors", false);
             int growthStage = Convert.ToInt32(ReadNetValue(__instance, _growthStage, 0));
             bool isStump = Convert.ToBoolean(ReadNetValue(__instance, _stump, false));
@@ -166,7 +171,7 @@ internal static class TreeCanopyLighting
             {
                 _diagnosticTreeSamples++;
                 _monitor?.Log(
-                    $"Tree draw sample #{_diagnosticTreeSamples}: location={location?.GetType().FullName ?? "null"}, outdoors={outdoors}, growthStage={growthStage}, treeType={treeKind}, stump={isStump}.",
+                    $"Tree draw sample #{_diagnosticTreeSamples}: location={(location?.GetType().FullName ?? "null")}, outdoors={outdoors}, growthStage={growthStage}, treeType={treeKind}, stump={isStump}.",
                     LogLevel.Trace);
             }
 
