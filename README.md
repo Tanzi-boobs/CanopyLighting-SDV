@@ -2,25 +2,23 @@
 
 A standalone Stardew Valley 1.6 SMAPI mod for directional lighting on mature wild-tree canopies, based on the canopy techniques supplied by Dynamic Shader. Dynamic Shader is not required at runtime.
 
-## Current candidate: 0.4.16
+## Candidate 0.4.17
 
-This candidate retains the bundled Dynamic Shader `ShadowEffect.mgfxo` canopy techniques and groups canopy overlays to avoid restarting SpriteBatch for every tree. It captures the world transform during `Tree.draw` and uses that transform for overlay coordinates while restoring the event-time batch state afterward. This addresses a likely cause of invisible or misplaced overlays in the Cinderbox test.
+- Flushes the queued shader overlays at the end of `GameLocation.drawAboveFrontLayer`, immediately after the tree layer, instead of waiting until `Display.RenderedWorld`. This is intended to preserve world draw order and reduce lighting overlays appearing over unrelated foreground sprites.
+- Skips the extra canopy overlay when the player is within the tree's canopy fade zone, so the vanilla transparency used to reveal the player is not covered by a fully opaque shader overlay.
+- Retains the bundled `ShadowEffect.mgfxo` and grouped drawing to avoid restarting SpriteBatch once per tree.
 
-The dawn intensity curve has also been adjusted: full daylight strength is reached shortly after 6:00 instead of 7:00. This should make the canopy lighting easier to observe during the user's frozen-6:00 test. It remains a hypothesis until visually verified in Cinderbox.
+This is a candidate fix and needs visual/FPS verification in Cinderbox. The shader still processes mature visible canopies, so performance may remain limited on dense, heavily modded maps.
 
 ## Visual behavior
 
 - Broadleaf technique on mature non-pine trees; pine-specific technique on mature pine trees.
-- Canopy pixels only; no added ground-shadow sprite. Vanilla circular shadows are unchanged.
-- GMCM options include effect enable, overall strength, broadleaf strengths and pine strengths.
+- Canopy pixels only; no added ground-shadow sprite. Vanilla circular ground shadows are unchanged.
+- GMCM settings control effect enable, overall strength, broadleaf strengths and pine strengths.
 - The mod loads `assets/shaders/ShadowEffect.mgfxo` from its own folder; Dynamic Shader is not a runtime dependency.
-
-## Rendering note
-
-The grouped pass draws canopy overlays after the world draw and before the HUD. This reduces per-tree batch switches, but may change overlap order where a canopy crosses characters, buildings, or other tree canopies. Check visual layering and FPS in-game. CI verifies compilation only.
 
 ## Install
 
-Extract the complete `CanopyLighting` folder into `Mods`. Keep the shader file in `assets/shaders/ShadowEffect.mgfxo`.
+Extract the complete `CanopyLighting` folder into `Mods`. Keep `assets/shaders/ShadowEffect.mgfxo` in place.
 
 The personal-use ZIP includes the compiled shader supplied by the user. That binary is intentionally not committed to this public repository; GitHub Actions produces a DLL-only validation artifact.
