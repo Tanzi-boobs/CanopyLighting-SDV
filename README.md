@@ -4,17 +4,19 @@ A standalone Stardew Valley 1.6 SMAPI mod for directional lighting on mature wil
 
 ## Candidate 0.4.17
 
-- Flushes the queued shader overlays at the end of `GameLocation.drawAboveFrontLayer`, immediately after the tree layer, instead of waiting until `Display.RenderedWorld`. This is intended to preserve world draw order and reduce lighting overlays appearing over unrelated foreground sprites.
-- Skips the extra canopy overlay when the player is within the tree's canopy fade zone, so the vanilla transparency used to reveal the player is not covered by a fully opaque shader overlay.
-- Retains the bundled `ShadowEffect.mgfxo` and grouped drawing to avoid restarting SpriteBatch once per tree.
+- Queues tree canopy overlays and flushes them after `GameLocation.drawAboveFrontLayer`, rather than waiting until the later world-render event. This is intended to keep overlays closer to the tree layer and reduce them drawing over unrelated foreground objects.
+- Avoids adding the shader overlay when Stardew's own tree alpha is below 0.98, so the mod doesn't paint a full-strength canopy over a tree being faded to reveal the player.
+- Uses the lightweight `TreeCanopyLight` technique for pine trees by default. The detailed texture-guided pine rim profile performs additional neighbour-texture samples, so it is now an optional GMCM setting.
+- Caches reflected property accessors and exits early for immature saplings to reduce repeated work in the `Tree.draw` hook.
+- Retains the original bundled `ShadowEffect.mgfxo` from the provided Dynamic Shader assets.
 
-This is a candidate fix and needs visual/FPS verification in Cinderbox. The shader still processes mature visible canopies, so performance may remain limited on dense, heavily modded maps.
+This candidate needs visual and FPS verification in Cinderbox. The tree's translucency near the player is normally controlled by Stardew's `alpha` value; the mod intentionally skips the extra overlay when that value indicates a fade. If the geometry truly disappears rather than becoming translucent, send a screenshot from another angle.
 
 ## Visual behavior
 
-- Broadleaf technique on mature non-pine trees; pine-specific technique on mature pine trees.
-- Canopy pixels only; no added ground-shadow sprite. Vanilla circular ground shadows are unchanged.
-- GMCM settings control effect enable, overall strength, broadleaf strengths and pine strengths.
+- Directional canopy light/shading on mature broadleaf and pine trees.
+- No added ground-shadow sprite; vanilla circular ground shadows are unchanged.
+- GMCM has an optional detailed pine rim profile, disabled by default for mobile performance.
 - The mod loads `assets/shaders/ShadowEffect.mgfxo` from its own folder; Dynamic Shader is not a runtime dependency.
 
 ## Install
