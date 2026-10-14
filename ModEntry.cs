@@ -1,12 +1,13 @@
 using System.Collections;
 using System.Reflection;
 using StardewModdingAPI;
-using StardewModdingAPI.Events;
 
 namespace DoubleTapHUD;
 
 public sealed class ModEntry : Mod
 {
+    private static ModEntry? _instance;
+    private object? _harmony;
     private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
     private ModConfig _config = new();
     private ClickTarget _pendingTarget;
@@ -20,64 +21,120 @@ public sealed class ModEntry : Mod
 
     public override void Entry(IModHelper helper)
     {
+        _instance = this;
         _config = helper.ReadConfig<ModConfig>();
         _config.DoubleTapWindowMilliseconds = Math.Clamp(_config.DoubleTapWindowMilliseconds, 180, 900);
         _config.MaxTapDistance = Math.Clamp(_config.MaxTapDistance, 16, 160);
         helper.WriteConfig(_config);
-        helper.Events.Input.ButtonPressed += OnButtonPressed;
+
+        InstallClickPatch();
         Monitor.Log($"Double Tap HUD ready. Window={_config.DoubleTapWindowMilliseconds}ms, distance={_config.MaxTapDistance}px.", LogLevel.Info);
     }
 
-    private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
+    private void InstallClickPatch()
     {
-        if (e.Button != SButton.MouseLeft)
-            return;
-
         try
         {
-            (int x, int y) = GetMousePosition();
-            ClickTarget target = ResolveTarget(x, y);
-            object? identity = _resolvedIdentity;
+            Type gameType = FindType("StardewValley.Game1")
+                ?? throw new TypeLoadException("StardewValley.Game1 was not found.");
+            Type harmonyType = FindType("HarmonyLib.Harmony")
+                ?? throw new TypeLoadException("HarmonyLib.Harmony was not found in the loaded assemblies.");
+            Type harmonyMethodType = harmonyType.Assembly.GetType("HarmonyLib.HarmonyMethod", false)
+                ?? throw new TypeLoadException("HarmonyLib.HarmonyMethod was not found.");
 
-            if (target == ClickTarget.None)
+            MethodInfo original = gameType.GetMethods(Flags).FirstOrDefault(m =>
             {
-                ClearPendingTap();
-                return;
-            }
+                ParameterInfo[] p = m.GetParameters();
+                return m.IsStatic && m.Name == "pressLeftClick" && p.Length == 2
+                    && p[0].ParameterType == typeof(int) && p[1].ParameterType == typeof(int);
+            }) ?? throw new MissingMethodException("Game1.pressLeftClick(int, int) was not found.");
 
-            bool secondTap = IsSecondTap(target, x, y, identity);
+            MethodInfo prefixMethod = typeof(ModEntry).GetMethod(
+                nameof(PressLeftClickPrefix), BindingFlags.Static | BindingFlags.NonPublic)
+                ?? throw new MissingMethodException("PressLeftClickPrefix was not found.");
 
-            // Suppress the first recipe tap. On the second tap, let the original
-            // game/Better Crafting click pipeline run unchanged.
-            if (target == ClickTarget.CraftingRecipe)
+            object harmony = Activator.CreateInstance(harmonyType, new object[] { ModManifest.UniqueID })
+                ?? throw new InvalidOperationException("Couldn't create a Harmony instance.");
+            object prefix = Activator.CreateInstance(harmonyMethodType, new object[] { prefixMethod })
+                ?? throw new InvalidOperationException("Couldn't create a HarmonyMethod.");
+
+            MethodInfo patch = harmonyType.GetMethods(Flags).FirstOrDefault(m =>
             {
-                if (!secondTap)
-                    e.Suppress();
-                else
-                    ClearPendingTap();
-                return;
-            }
+                ParameterInfo[] p = m.GetParameters();
+                return m.Name == "Patch" && p.Length == 5
+                    && p[0].ParameterType == typeof(MethodBase)
+                    && p[1].ParameterType == harmonyMethodType;
+            }) ?? throw new MissingMethodException("The expected Harmony.Patch overload was not found.");
 
-            // Navigation taps are handled here only after the second tap.
-            e.Suppress();
-            if (!secondTap)
-                return;
-
-            ClearPendingTap();
-            switch (target)
-            {
-                case ClickTarget.Clock: OpenGameMenu(); break;
-                case ClickTarget.QuestButton: OpenQuestLog(); break;
-                case ClickTarget.MapTab: OpenMenuTab("map"); break;
-                case ClickTarget.CraftingTab: OpenMenuTab("crafting"); break;
-                case ClickTarget.MapBlank: CloseMapTab(); break;
-            }
+            patch.Invoke(harmony, new object?[] { original, prefix, null, null, null });
+            _harmony = harmony;
+            Monitor.Log("Installed click hook on Game1.pressLeftClick.", LogLevel.Info);
         }
         catch (Exception ex)
         {
-            ClearPendingTap();
-            Monitor.Log("Couldn't process tap: " + ex.GetType().Name + ": " + ex.Message, LogLevel.Warn);
+            Exception cause = ex is TargetInvocationException tie && tie.InnerException is not null
+                ? tie.InnerException : ex;
+            Monitor.Log("Couldn't install the game-click hook: " + cause.GetType().Name + ": " + cause.Message, LogLevel.Error);
         }
+    }
+
+    private static bool PressLeftClickPrefix(int x, int y)
+    {
+        ModEntry? instance = _instance;
+        if (instance is null)
+            return true;
+
+        try
+        {
+            return instance.ProcessLeftClick(x, y);
+        }
+        catch (Exception ex)
+        {
+            instance.ClearPendingTap();
+            instance.Monitor.Log("Couldn't process tap: " + ex.GetType().Name + ": " + ex.Message, LogLevel.Warn);
+            return true;
+        }
+    }
+
+    private bool ProcessLeftClick(int x, int y)
+    {
+        ClickTarget target = ResolveTarget(x, y);
+        object? identity = _resolvedIdentity;
+
+        if (target == ClickTarget.None)
+        {
+            ClearPendingTap();
+            return true;
+        }
+
+        bool secondTap = IsSecondTap(target, x, y, identity);
+
+        // First recipe taps are blocked here. The second tap passes through to the
+        // original Game1/vanilla/Better Crafting click pipeline.
+        if (target == ClickTarget.CraftingRecipe)
+        {
+            if (!secondTap)
+                return false;
+
+            ClearPendingTap();
+            return true;
+        }
+
+        // Delay these navigation actions until the second tap and prevent the
+        // native handler from running on either tap.
+        if (!secondTap)
+            return false;
+
+        ClearPendingTap();
+        switch (target)
+        {
+            case ClickTarget.Clock: OpenGameMenu(); break;
+            case ClickTarget.QuestButton: OpenQuestLog(); break;
+            case ClickTarget.MapTab: OpenMenuTab("map"); break;
+            case ClickTarget.CraftingTab: OpenMenuTab("crafting"); break;
+            case ClickTarget.MapBlank: CloseMapTab(); break;
+        }
+        return false;
     }
 
     private ClickTarget ResolveTarget(int x, int y)
@@ -100,6 +157,19 @@ public sealed class ModEntry : Mod
 
             if (activeMenu.GetType().Name == "GameMenu")
             {
+                object? page = InvokeNoArg(activeMenu, "GetCurrentPage");
+                if (page?.GetType().Name == "MapPage")
+                {
+                    // On the map page only blank space gets the double-tap behavior.
+                    // Location markers, all menu tabs, and the close button remain native single taps.
+                    if (Contains(GetMember(activeMenu, "upperRightCloseButton"), x, y)
+                        || IsAnyTabAt(activeMenu, x, y)
+                        || IsMapLocationAt(page, x, y))
+                        return ClickTarget.None;
+
+                    return _config.DoubleTapBlankMapToClose ? ClickTarget.MapBlank : ClickTarget.None;
+                }
+
                 if (_config.DoubleTapMapTab && TryGetTabAt(activeMenu, "map", x, y, out object? mapTab))
                 {
                     _resolvedIdentity = mapTab;
@@ -110,18 +180,6 @@ public sealed class ModEntry : Mod
                 {
                     _resolvedIdentity = craftingTab;
                     return ClickTarget.CraftingTab;
-                }
-
-                object? page = InvokeNoArg(activeMenu, "GetCurrentPage");
-                if (_config.DoubleTapBlankMapToClose && page?.GetType().Name == "MapPage")
-                {
-                    // Do not interfere with map pins, tabs, or the close button.
-                    if (Contains(GetMember(activeMenu, "upperRightCloseButton"), x, y)
-                        || IsAnyTabAt(activeMenu, x, y)
-                        || IsMapLocationAt(page, x, y))
-                        return ClickTarget.None;
-
-                    return ClickTarget.MapBlank;
                 }
             }
 
