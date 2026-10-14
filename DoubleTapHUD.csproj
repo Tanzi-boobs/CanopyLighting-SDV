@@ -3,7 +3,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <RootNamespace>DoubleTapHUD</RootNamespace>
     <AssemblyName>DoubleTapHUD</AssemblyName>
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
