@@ -32,6 +32,7 @@ internal static class TreeCanopyLighting
     private static FieldInfo? _stump;
     private static MethodInfo? _tryGetTreeData;
     private static FieldInfo? _alpha;
+    private static FieldInfo? _flipped;
     private static FieldInfo? _shakeRotation;
     private static FieldInfo? _viewport;
     private static FieldInfo? _timeOfDay;
@@ -61,6 +62,8 @@ internal static class TreeCanopyLighting
     private static readonly System.Collections.Generic.Dictionary<string, object> EffectParameters = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.Dictionary<string, MethodInfo> EffectParameterSetters = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.Dictionary<string, object> EffectTechniques = new(StringComparer.Ordinal);
+    private static readonly System.Collections.Generic.Dictionary<Type, MemberInfo?> NetFieldValueMembers = new();
+    private static readonly System.Collections.Generic.Dictionary<(Type Type, string Name), MemberInfo?> MemberAccessors = new();
     private static readonly System.Collections.Generic.List<CanopyDrawCommand> QueuedCanopies = new();
     private static object? _queuedSpriteBatch;
     // Capture the world-batch transform inside Tree.draw; RenderedWorld may use a
@@ -115,6 +118,7 @@ internal static class TreeCanopyLighting
             });
         _stump = AccessTools.Field(_treeType, "stump");
         _alpha = AccessTools.Field(_treeType, "alpha");
+        _flipped = AccessTools.Field(_treeType, "flipped");
         _shakeRotation = AccessTools.Field(_treeType, "shakeRotation");
         _viewport = AccessTools.Field(_gameType, "viewport");
         _timeOfDay = AccessTools.Field(_gameType, "timeOfDay");
@@ -210,8 +214,16 @@ internal static class TreeCanopyLighting
             // Do not gate canopy rendering on Game1.currentLocation: some Android/Cinderbox
             // builds expose that member differently, and Tree.draw itself already proves
             // that this tree is currently being rendered in the active scene.
+            // Most Tree.draw calls are immature saplings. Return after reading only growthStage
+            // instead of reflecting over stump/type fields for every sapling every frame.
             int growthStage = Convert.ToInt32(ReadNetValue(__instance, _growthStage, 0));
+            if (growthStage < 5)
+                return;
+
             bool isStump = Convert.ToBoolean(ReadNetValue(__instance, _stump, false));
+            if (isStump)
+                return;
+
             string treeKind = Convert.ToString(ReadNetValue(__instance, _treeKind, "1")) ?? "1";
             bool isPine = treeKind == "3";
 
@@ -224,11 +236,6 @@ internal static class TreeCanopyLighting
                     $"Tree draw sample #{_diagnosticTreeSamples}: growthStage={growthStage}, treeType={treeKind}, stump={isStump}.",
                     LogLevel.Trace);
             }
-
-            if (growthStage < 5)
-                return;
-            if (isStump)
-                return;
 
             if (!_loggedMatureCandidate)
             {
@@ -297,7 +304,7 @@ internal static class TreeCanopyLighting
                     sourceX = 96;
             }
 
-            bool flipped = Convert.ToBoolean(ReadNetValue(__instance, AccessTools.Field(_treeType!, "flipped"), false));
+            bool flipped = Convert.ToBoolean(ReadNetValue(__instance, _flipped, false));
             int left = ToChannel(sourceX / (float)textureWidth);
             int right = ToChannel((sourceX + sourceWidth) / (float)textureWidth);
             int top = ToChannel(sourceY / (float)textureHeight);
@@ -436,7 +443,9 @@ internal static class TreeCanopyLighting
             throw new InvalidOperationException("Couldn't find MonoGame's Vector2 type.");
 
         object sunDirection = Activator.CreateInstance(vectorType, new object[] { sunX, -0.55f })!;
-        string technique = isPine ? "TextureGuidedPineCanopyLight" : "TreeCanopyLight";
+        string technique = (isPine && _config.UseTextureGuidedPineProfile)
+            ? "TextureGuidedPineCanopyLight"
+            : "TreeCanopyLight";
         SetCurrentTechnique(technique);
         SetEffectParameter("TreeCanopyLightSunDirection", sunDirection);
 
@@ -444,16 +453,27 @@ internal static class TreeCanopyLighting
         // contains values from pre-tuning releases. In particular, broadleaf exposure is
         // exponential in the shader and can saturate whole canopies at high values.
         float strength = Math.Clamp(_config.OverallStrength, 0f, 1.25f) * solar;
-        if (!isPine)
-        {
-            SetFloat("TreeCanopyLightStrength", Math.Clamp(_config.OakLightStrength, 0f, 1.75f) * strength);
-            SetFloat("TreeCanopyShadowStrength", Math.Clamp(_config.OakShadowStrength, 0f, 3f) * strength);
-        }
-        else
+        bool useDetailedPine = isPine && _config.UseTextureGuidedPineProfile;
+        if (useDetailedPine)
         {
             SetFloat("TextureGuidedPineLightStrength", Math.Clamp(_config.PineLightStrength, 0f, 3f) * strength);
             SetFloat("TextureGuidedPineShadowStrength", Math.Clamp(_config.PineShadowStrength, 0f, 3f) * strength);
             SetFloat("TextureGuidedPineRimStrength", Math.Clamp(_config.PineRimStrength, 0f, 3f) * strength);
+        }
+        else
+        {
+            // The broadleaf technique needs one texture sample and inexpensive masks, while
+            // the detailed pine technique samples neighbouring texels repeatedly to build
+            // a sun-facing rim. Use the lightweight directional profile on pine by default
+            // for mobile; the detailed profile remains available as an explicit option.
+            float light = isPine
+                ? Math.Clamp(_config.PineLightStrength, 0f, 1.75f)
+                : Math.Clamp(_config.OakLightStrength, 0f, 1.75f);
+            float shadow = isPine
+                ? Math.Clamp(_config.PineShadowStrength, 0f, 2.5f)
+                : Math.Clamp(_config.OakShadowStrength, 0f, 3f);
+            SetFloat("TreeCanopyLightStrength", light * strength);
+            SetFloat("TreeCanopyShadowStrength", shadow * strength);
         }
     }
 
@@ -958,15 +978,37 @@ internal static class TreeCanopyLighting
     {
         if (field?.GetValue(instance) is not object netField)
             return fallback;
-        return ReadMember(netField, "Value") ?? fallback;
+
+        Type type = netField.GetType();
+        if (!NetFieldValueMembers.TryGetValue(type, out MemberInfo? member))
+        {
+            member = (MemberInfo?)AccessTools.Property(type, "Value") ?? AccessTools.Field(type, "Value");
+            NetFieldValueMembers[type] = member;
+        }
+
+        return ReadMemberValue(netField, member) ?? fallback;
     }
 
     private static object? ReadMember(object instance, string name)
     {
         Type type = instance.GetType();
-        return AccessTools.Property(type, name)?.GetValue(instance)
-            ?? AccessTools.Field(type, name)?.GetValue(instance);
+        var key = (type, name);
+        if (!MemberAccessors.TryGetValue(key, out MemberInfo? member))
+        {
+            member = (MemberInfo?)AccessTools.Property(type, name) ?? AccessTools.Field(type, name);
+            MemberAccessors[key] = member;
+        }
+
+        return ReadMemberValue(instance, member);
     }
+
+    private static object? ReadMemberValue(object instance, MemberInfo? member) =>
+        member switch
+        {
+            PropertyInfo property => property.GetValue(instance),
+            FieldInfo field => field.GetValue(instance),
+            _ => null
+        };
 
     private static bool ReadBooleanMember(object instance, string name, bool fallback)
     {
