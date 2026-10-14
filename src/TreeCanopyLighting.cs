@@ -67,7 +67,17 @@ internal static class TreeCanopyLighting
     private static readonly System.Collections.Generic.Dictionary<(Type Type, string Name), MemberInfo?> MemberAccessors = new();
     private sealed record CanopyCacheKey(
         object Texture, int SourceX, int SourceY, int Width, int Height,
-        bool IsPine, bool IsFlipped, int TimeOfDay);
+        bool IsPine, bool IsFlipped, int LightingHour);
+
+    private sealed record TreeDataProfile(
+        bool UseAlternateSpriteWhenSeedReady,
+        bool UseAlternateSpriteWhenNotShaken);
+
+    private sealed class ObjectReferenceComparer : IEqualityComparer<object>
+    {
+        public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
+        public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
+    }
 
     private sealed class CanopyCacheKeyComparer : IEqualityComparer<CanopyCacheKey>
     {
@@ -77,11 +87,11 @@ internal static class TreeCanopyLighting
             && x.SourceX == y.SourceX && x.SourceY == y.SourceY
             && x.Width == y.Width && x.Height == y.Height
             && x.IsPine == y.IsPine && x.IsFlipped == y.IsFlipped
-            && x.TimeOfDay == y.TimeOfDay;
+            && x.LightingHour == y.LightingHour;
 
         public int GetHashCode(CanopyCacheKey key) =>
             HashCode.Combine(RuntimeHelpers.GetHashCode(key.Texture), key.SourceX, key.SourceY,
-                key.Width, key.Height, key.IsPine, key.IsFlipped, key.TimeOfDay);
+                key.Width, key.Height, key.IsPine, key.IsFlipped, key.LightingHour);
     }
 
     private sealed class CanopyOverlayCacheEntry
@@ -93,7 +103,11 @@ internal static class TreeCanopyLighting
 
     private static readonly Dictionary<CanopyCacheKey, CanopyOverlayCacheEntry> CanopyOverlayCache =
         new(new CanopyCacheKeyComparer());
-    private static int _cachedTimeOfDay = int.MinValue;
+    private static readonly Dictionary<string, TreeDataProfile?> TreeDataProfiles = new(StringComparer.Ordinal);
+    private static readonly Dictionary<object, (int Width, int Height)> TextureDimensions =
+        new(new ObjectReferenceComparer());
+    private static readonly Dictionary<byte, object> OverlayTintColors = new();
+    private static int _cachedLightingHour = int.MinValue;
     private static object? _whiteColor;
     private static object? _noSpriteEffects;
     private static object? _flipSpriteEffects;
@@ -122,13 +136,16 @@ internal static class TreeCanopyLighting
         CanopyOverlayCache.Clear();
     }
 
-    private static void EnsureCanopyCacheTime(int time)
+    // Lighting textures don't need rebaking every ten in-game minutes. Reuse the
+    // same canopy look for the whole game hour so movement/time ticks don't trigger
+    // a burst of RenderTarget creation and shader work.
+    private static void EnsureCanopyCacheHour(int lightingHour)
     {
-        if (_cachedTimeOfDay == time)
+        if (_cachedLightingHour == lightingHour)
             return;
 
         ClearCanopyOverlayCache();
-        _cachedTimeOfDay = time;
+        _cachedLightingHour = lightingHour;
     }
 
     public static void Install(ModConfig config, IMonitor monitor, string modDirectory)
@@ -239,7 +256,8 @@ internal static class TreeCanopyLighting
                 return;
 
             int time = Convert.ToInt32(_timeOfDay.GetValue(null) ?? 1200);
-            EnsureCanopyCacheTime(time);
+            int lightingHour = time / 100;
+            EnsureCanopyCacheHour(lightingHour);
             float hour = time / 100f;
             float solar = GetDaylightFactor(hour);
             if (solar <= 0.001f)
@@ -251,9 +269,8 @@ internal static class TreeCanopyLighting
             if (topRect is null || texture is null)
                 return;
 
-            float treeAlpha = ReadFloatField(__instance, _alpha, 1f);
-            // Keep vanilla's player/chop transparency instead of covering it with opaque pixels.
-            if (treeAlpha < 0.98f)
+            float treeAlpha = Math.Clamp(ReadFloatField(__instance, _alpha, 1f), 0f, 1f);
+            if (treeAlpha <= 0.01f)
                 return;
 
             float rotation = ReadFloatField(__instance, _shakeRotation, 0f);
@@ -265,22 +282,26 @@ internal static class TreeCanopyLighting
             int sourceY = ReadIntMember(topRect, "Y");
             int sourceWidth = ReadIntMember(topRect, "Width");
             int sourceHeight = ReadIntMember(topRect, "Height");
-            int textureWidth = ReadIntMember(texture, "Width");
-            int textureHeight = ReadIntMember(texture, "Height");
+            if (!TextureDimensions.TryGetValue(texture, out (int Width, int Height) dimensions))
+            {
+                dimensions = (ReadIntMember(texture, "Width"), ReadIntMember(texture, "Height"));
+                TextureDimensions[texture] = dimensions;
+            }
+            int textureWidth = dimensions.Width;
+            int textureHeight = dimensions.Height;
             if (sourceWidth < 2 || sourceHeight < 2 || textureWidth < 1 || textureHeight < 1)
                 return;
 
             // Select the exact atlas variant for seed-ready, shaken and mossy trees.
-            if (TryGetTreeData(treeKind, out object? treeData))
+            TreeDataProfile? treeData = GetTreeDataProfile(treeKind);
+            if (treeData is not null)
             {
                 bool hasSeed = Convert.ToBoolean(ReadNetValue(__instance, _hasSeed, false));
                 bool hasMoss = Convert.ToBoolean(ReadNetValue(__instance, _hasMoss, false));
                 bool wasShakenToday = Convert.ToBoolean(ReadNetValue(__instance, _wasShakenToday, false));
-                bool useAlternateWhenSeedReady = ReadBooleanMember(treeData!, "UseAlternateSpriteWhenSeedReady", false);
-                bool useAlternateWhenNotShaken = ReadBooleanMember(treeData!, "UseAlternateSpriteWhenNotShaken", false);
 
-                sourceX = (useAlternateWhenSeedReady && hasSeed)
-                    || (useAlternateWhenNotShaken && !wasShakenToday) ? 48 : 0;
+                sourceX = (treeData.UseAlternateSpriteWhenSeedReady && hasSeed)
+                    || (treeData.UseAlternateSpriteWhenNotShaken && !wasShakenToday) ? 48 : 0;
                 if (hasMoss)
                     sourceX = 96;
             }
@@ -306,24 +327,11 @@ internal static class TreeCanopyLighting
                 || bottom <= 0f || top >= ReadFloatMember(viewport, "Height"))
                 return;
 
-            // Vanilla fades trees when the farmer passes behind them. Preserve that
-            // behavior; don't paint an opaque overlay in the fade zone.
-            object? player = ReadStaticMember(_gameType, "player");
-            object? playerPosition = player is null ? null : ReadMember(player, "Position");
-            if (playerPosition is not null)
-            {
-                float playerX = ReadFloatMember(playerPosition, "X") + 32f;
-                float playerY = ReadFloatMember(playerPosition, "Y") + 32f;
-                float treeCenterX = tileX * 64f + 32f;
-                float treeBaseY = tileY * 64f + 64f;
-                if (MathF.Abs(playerX - treeCenterX) <= 56f
-                    && playerY >= treeBaseY - 192f
-                    && playerY <= treeBaseY + 48f)
-                    return;
-            }
-
+            // Keep the overlay in the exact Tree.draw pass. The same tree alpha used
+            // by vanilla is applied to the overlay tint, so approaching/fading a tree
+            // no longer makes the lighting layer abruptly disappear.
             CanopyCacheKey key = new(texture, sourceX, sourceY, sourceWidth, sourceHeight,
-                isPine, flipped, time);
+                isPine, flipped, lightingHour);
 
             if (!CanopyOverlayCache.TryGetValue(key, out CanopyOverlayCacheEntry? entry))
             {
@@ -380,9 +388,9 @@ internal static class TreeCanopyLighting
                 return;
             object position = Activator.CreateInstance(drawVectorType, new object[] { drawX, drawY })!;
             object effects = GetSpriteEffects(flipped);
-            object white = GetWhiteColor();
+            object tint = GetOverlayTintColor(treeAlpha);
             InvokeSpriteBatchDraw(
-                batch, entry.Texture, position, entry.SourceRect, white,
+                batch, entry.Texture, position, entry.SourceRect, tint,
                 rotation, entry.Origin, 4f, effects, 0f);
 
             if (!_loggedSuccessfulRender)
@@ -412,6 +420,40 @@ internal static class TreeCanopyLighting
     {
         _whiteColor ??= GetStaticMember("Microsoft.Xna.Framework.Color", "White");
         return _whiteColor;
+    }
+
+    private static object GetOverlayTintColor(float alpha)
+    {
+        byte alphaByte = (byte)ToChannel(alpha);
+        if (alphaByte == 255)
+            return GetWhiteColor();
+
+        if (!OverlayTintColors.TryGetValue(alphaByte, out object? tint))
+        {
+            Type colorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Color")
+                ?? throw new InvalidOperationException("Couldn't find MonoGame's Color type.");
+            tint = Activator.CreateInstance(
+                colorType, new object[] { (byte)255, (byte)255, (byte)255, alphaByte })!;
+            OverlayTintColors[alphaByte] = tint;
+        }
+
+        return tint;
+    }
+
+    private static TreeDataProfile? GetTreeDataProfile(string treeKind)
+    {
+        if (TreeDataProfiles.TryGetValue(treeKind, out TreeDataProfile? profile))
+            return profile;
+
+        if (TryGetTreeData(treeKind, out object? data))
+        {
+            profile = new TreeDataProfile(
+                ReadBooleanMember(data!, "UseAlternateSpriteWhenSeedReady", false),
+                ReadBooleanMember(data!, "UseAlternateSpriteWhenNotShaken", false));
+        }
+
+        TreeDataProfiles[treeKind] = profile;
+        return profile;
     }
 
     private static object GetSpriteEffects(bool flipped)
