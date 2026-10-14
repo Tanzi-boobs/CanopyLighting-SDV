@@ -1,9 +1,8 @@
-using System.Reflection;
 using StardewModdingAPI;
 
 namespace CanopyLighting;
 
-/// <summary>Loads standalone canopy lighting and registers GMCM options via reflection for Android SMAPI forks.</summary>
+/// <summary>Loads standalone canopy lighting and registers GMCM options through a public API interface.</summary>
 public sealed class ModEntry : Mod
 {
     private ModConfig Config = new();
@@ -45,9 +44,10 @@ public sealed class ModEntry : Mod
 
     private void RegisterConfigMenu(IModHelper helper)
     {
-        // Use the raw API object and reflection instead of a Pintail API interface.
-        // Some Android SMAPI builds don't expose StardewModdingAPI.IManifest, which
-        // otherwise causes TypeLoadException before GMCM can register this mod.
+        // GMCM APIs must be requested through a public interface, not System.Object.
+        // The interface uses object for the optional mod manifest parameter to avoid
+        // directly referencing IManifest on Android SMAPI builds; passing null tells GMCM
+        // to register settings for the mod which requested the API.
         IGenericModConfigMenuApi? api = helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
         if (api is null)
         {
