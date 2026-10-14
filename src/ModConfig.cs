@@ -4,7 +4,7 @@ internal sealed class ModConfig
 {
     public bool Enabled { get; set; } = true;
 
-    /// <summary>Master multiplier for canopy-only lighting (0-2).</summary>
+    /// <summary>Master multiplier for canopy-only lighting (0-1.25) to avoid overexposure.</summary>
     public float OverallStrength { get; set; } = 1.0f;
 
     /// <summary>Enables the broadleaf profile on oak, maple, palm, mushroom, mahogany, mystic and other non-pine wild trees.</summary>
@@ -13,7 +13,7 @@ internal sealed class ModConfig
     /// <summary>Enables the texture-guided profile on mature pine trees.</summary>
     public bool EnablePineCanopy { get; set; } = true;
 
-    /// <summary>Broadleaf-profile light strength, applied to every non-pine wild-tree canopy.</summary>
+    /// <summary>Broadleaf-profile light strength (0-1.75), applied to every non-pine wild-tree canopy.</summary>
     public float OakLightStrength { get; set; } = 1.54f;
 
     /// <summary>Broadleaf-profile back-facing canopy shading. Does not draw a ground shadow.</summary>
