@@ -27,15 +27,15 @@ jobs:
           cd artifact
           zip -qr DoubleTapHUD-0.2.3-installable.zip DoubleTapHUD
           mkdir -p ../export
-          cp DoubleTapHUD-0.2.3-installable.zip ../export/DoubleTapHUD-0.2.2-installable.zip
+          cp DoubleTapHUD-0.2.3-installable.zip ../export/DoubleTapHUD-0.2.3-installable.zip
           cd ..
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add export/DoubleTapHUD-0.2.2-installable.zip
-          git commit -m "Publish Double Tap HUD 0.2.2 installable ZIP" || echo "ZIP unchanged"
+          git add export/DoubleTapHUD-0.2.3-installable.zip
+          git commit -m "Publish Double Tap HUD 0.2.3 installable ZIP" || echo "ZIP unchanged"
           git push
       - uses: actions/upload-artifact@v4
         with:
-          name: DoubleTapHUD-0.2.2-installable
-          path: artifact/DoubleTapHUD-0.2.2-installable.zip
+          name: DoubleTapHUD-0.2.3-installable
+          path: artifact/DoubleTapHUD-0.2.3-installable.zip
           if-no-files-found: error
