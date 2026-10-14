@@ -15,7 +15,6 @@ public interface IDisplayEvents
 
 public sealed class RenderedWorldEventArgs : EventArgs
 {
-    public object SpriteBatch { get; set; } = null!;
 }
 
 public interface IGameLoopEvents
