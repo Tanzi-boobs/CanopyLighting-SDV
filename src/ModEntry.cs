@@ -24,6 +24,10 @@ public sealed class ModEntry : Mod
             return;
         }
 
+        // Tree.draw only queues data; one batched shader pass is flushed after the world draw.
+        helper.Events.Display.RenderedWorld += (_, e) =>
+            TreeCanopyLighting.RenderQueuedOverlays(e.SpriteBatch);
+
         // SMAPI explicitly requires mod-provided API calls to happen after all mods initialize.
         // GameLaunched is the safe point for retrieving and registering the optional GMCM API.
         helper.Events.GameLoop.GameLaunched += (_, _) =>
