@@ -10,8 +10,11 @@ internal sealed class ModConfig
     /// <summary>Enables the broadleaf profile on oak, maple, palm, mushroom, mahogany, mystic and other non-pine wild trees.</summary>
     public bool EnableOakCanopy { get; set; } = true;
 
-    /// <summary>Enables the texture-guided profile on mature pine trees.</summary>
+    /// <summary>Enables lighting on mature pine trees.</summary>
     public bool EnablePineCanopy { get; set; } = true;
+
+    /// <summary>Use the more expensive texture-guided rim profile on pine trees. Off by default for mobile performance.</summary>
+    public bool UseTextureGuidedPineProfile { get; set; } = false;
 
     /// <summary>Broadleaf-profile light strength (0-1.75), applied to every non-pine wild-tree canopy.</summary>
     public float OakLightStrength { get; set; } = 1.54f;
