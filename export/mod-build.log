@@ -1,5 +1,5 @@
   Determining projects to restore...
-  Restored /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj (in 67 ms).
+  Restored /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj (in 70 ms).
 /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/ModEntry.cs(123,45): error CS1061: 'ModEntry' does not contain a definition for 'ProcessLeftClick' and no accessible extension method 'ProcessLeftClick' accepting a first argument of type 'ModEntry' could be found (are you missing a using directive or an assembly reference?) [/home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj]
 /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/ModEntry.cs(129,45): error CS1061: 'ModEntry' does not contain a definition for 'ProcessLeftClick' and no accessible extension method 'ProcessLeftClick' accepting a first argument of type 'ModEntry' could be found (are you missing a using directive or an assembly reference?) [/home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj]
 
@@ -10,4 +10,4 @@ Build FAILED.
     0 Warning(s)
     2 Error(s)
 
-Time Elapsed 00:00:01.58
+Time Elapsed 00:00:01.71
