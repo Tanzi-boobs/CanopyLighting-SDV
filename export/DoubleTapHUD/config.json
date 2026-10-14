@@ -1,0 +1,10 @@
+{
+  "DoubleTapWindowMilliseconds": 420,
+  "MaxTapDistance": 72,
+  "ClockOpensGameMenu": true,
+  "DoubleTapQuestButton": true,
+  "DoubleTapMapTab": true,
+  "DoubleTapCraftingTab": true,
+  "DoubleTapCraftingRecipes": true,
+  "DoubleTapBlankMapToClose": true
+}
