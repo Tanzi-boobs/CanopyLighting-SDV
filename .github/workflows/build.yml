@@ -25,9 +25,9 @@ jobs:
           mkdir -p artifact/DoubleTapHUD
           cp bin/Release/net6.0/DoubleTapHUD.dll manifest.json config.json README.md artifact/DoubleTapHUD/
           cd artifact
-          zip -qr DoubleTapHUD-0.2.2-installable.zip DoubleTapHUD
+          zip -qr DoubleTapHUD-0.2.3-installable.zip DoubleTapHUD
           mkdir -p ../export
-          cp DoubleTapHUD-0.2.2-installable.zip ../export/DoubleTapHUD-0.2.2-installable.zip
+          cp DoubleTapHUD-0.2.3-installable.zip ../export/DoubleTapHUD-0.2.2-installable.zip
           cd ..
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
