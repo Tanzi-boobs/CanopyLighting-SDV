@@ -87,7 +87,7 @@ public sealed class ModEntry : Mod
             (Action<float>)(value => Config.OverallStrength = value),
             (Func<string>)(() => "Overall strength"),
             (Func<string>)(() => "Master strength for all canopy lighting."),
-            (float?)0f, (float?)2f, (float?)0.05f,
+            (float?)0f, (float?)1.25f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
@@ -104,7 +104,7 @@ public sealed class ModEntry : Mod
             (Action<float>)(value => Config.OakLightStrength = value),
             (Func<string>)(() => "Broadleaf light strength"),
             (Func<string>)(() => "Brightness applied to the lit portion of the canopy."),
-            (float?)0f, (float?)5f, (float?)0.05f,
+            (float?)0f, (float?)1.75f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
@@ -130,7 +130,7 @@ public sealed class ModEntry : Mod
             (Action<float>)(value => Config.PineLightStrength = value),
             (Func<string>)(() => "Pine light strength"),
             (Func<string>)(() => "Brightness on lit pine-canopy pixels."),
-            (float?)0f, (float?)5f, (float?)0.05f,
+            (float?)0f, (float?)3f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
@@ -139,7 +139,7 @@ public sealed class ModEntry : Mod
             (Action<float>)(value => Config.PineShadowStrength = value),
             (Func<string>)(() => "Pine canopy shading"),
             (Func<string>)(() => "Darkening on back-facing pine canopy pixels only; no ground shadow is drawn."),
-            (float?)0f, (float?)5f, (float?)0.05f,
+            (float?)0f, (float?)3f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
@@ -148,7 +148,7 @@ public sealed class ModEntry : Mod
             (Action<float>)(value => Config.PineRimStrength = value),
             (Func<string>)(() => "Pine rim lighting"),
             (Func<string>)(() => "Additional light along sun-facing pine-canopy edges."),
-            (float?)0f, (float?)5f, (float?)0.05f,
+            (float?)0f, (float?)3f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
