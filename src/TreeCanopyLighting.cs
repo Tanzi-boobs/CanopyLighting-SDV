@@ -86,9 +86,9 @@ internal static class TreeCanopyLighting
 
     private sealed class CanopyOverlayCacheEntry
     {
-        public required object Texture { get; init; }
-        public required object SourceRect { get; init; }
-        public required object Origin { get; init; }
+        public object Texture { get; init; } = null!;
+        public object SourceRect { get; init; } = null!;
+        public object Origin { get; init; } = null!;
     }
 
     private static readonly Dictionary<CanopyCacheKey, CanopyOverlayCacheEntry> CanopyOverlayCache =
@@ -459,8 +459,8 @@ internal static class TreeCanopyLighting
 
         try
         {
-            worldBatchEnded = true;
             InvokeSpriteBatchEnd(batch);
+            worldBatchEnded = true;
 
             SetRenderTarget(graphicsDevice, renderTarget);
             targetChanged = true;
