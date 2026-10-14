@@ -35,106 +35,110 @@ public sealed class ModEntry : Mod
     {
         try
         {
-            Type gameType = FindType("StardewValley.Game1")
-                ?? throw new TypeLoadException("StardewValley.Game1 was not found.");
             Type harmonyType = FindType("HarmonyLib.Harmony")
                 ?? throw new TypeLoadException("HarmonyLib.Harmony was not found in the loaded assemblies.");
             Type harmonyMethodType = harmonyType.Assembly.GetType("HarmonyLib.HarmonyMethod", false)
                 ?? throw new TypeLoadException("HarmonyLib.HarmonyMethod was not found.");
 
-            MethodInfo original = gameType.GetMethods(Flags).FirstOrDefault(m =>
-            {
-                ParameterInfo[] p = m.GetParameters();
-                return m.IsStatic && m.Name == "pressLeftClick" && p.Length == 2
-                    && p[0].ParameterType == typeof(int) && p[1].ParameterType == typeof(int);
-            }) ?? throw new MissingMethodException("Game1.pressLeftClick(int, int) was not found.");
-
-            MethodInfo prefixMethod = typeof(ModEntry).GetMethod(
-                nameof(PressLeftClickPrefix), BindingFlags.Static | BindingFlags.NonPublic)
-                ?? throw new MissingMethodException("PressLeftClickPrefix was not found.");
-
-            object harmony = Activator.CreateInstance(harmonyType, new object[] { "Tanzi.DoubleTapHUD" })
-                ?? throw new InvalidOperationException("Couldn't create a Harmony instance.");
-            object prefix = Activator.CreateInstance(harmonyMethodType, new object[] { prefixMethod })
-                ?? throw new InvalidOperationException("Couldn't create a HarmonyMethod.");
-
-            MethodInfo patch = harmonyType.GetMethods(Flags).FirstOrDefault(m =>
+            MethodInfo patchMethod = harmonyType.GetMethods(Flags).FirstOrDefault(m =>
             {
                 ParameterInfo[] p = m.GetParameters();
                 return m.Name == "Patch" && p.Length == 5
                     && p[0].ParameterType == typeof(MethodBase)
                     && p[1].ParameterType == harmonyMethodType;
-            }) ?? throw new MissingMethodException("The expected Harmony.Patch overload was not found.");
+            }) ?? throw new MissingMethodException("Harmony.Patch(MethodBase, HarmonyMethod, HarmonyMethod, HarmonyMethod, HarmonyMethod) was not found.");
 
-            patch.Invoke(harmony, new object?[] { original, prefix, null, null, null });
+            object harmony = Activator.CreateInstance(harmonyType, new object[] { "Tanzi.DoubleTapHUD" })
+                ?? throw new InvalidOperationException("Couldn't create a Harmony instance.");
+
+            int installed = 0;
+            installed += TryPatch(harmony, patchMethod, harmonyMethodType,
+                "StardewValley.Menus.GameMenu", "receiveLeftClick",
+                new[] { typeof(int), typeof(int), typeof(bool) },
+                nameof(GameMenuLeftClickPrefix), postfix: false) ? 1 : 0;
+
+            installed += TryPatch(harmony, patchMethod, harmonyMethodType,
+                "StardewValley.Menus.DayTimeMoneyBox", "receiveLeftClick",
+                new[] { typeof(int), typeof(int), typeof(bool) },
+                nameof(DayTimeMoneyBoxLeftClickPrefix), postfix: false) ? 1 : 0;
+
+            installed += TryPatch(harmony, patchMethod, harmonyMethodType,
+                "StardewValley.Menus.DayTimeMoneyBox", "isWithinBounds",
+                new[] { typeof(int), typeof(int) },
+                nameof(DayTimeMoneyBoxBoundsPostfix), postfix: true) ? 1 : 0;
+
             _harmony = harmony;
-            Monitor.Log("Installed click hook on Game1.pressLeftClick.", LogLevel.Info);
+            if (installed == 3)
+                Monitor.Log("Installed click hooks on GameMenu and DayTimeMoneyBox.", LogLevel.Info);
+            else
+                Monitor.Log($"Installed {installed}/3 click hooks. Features needing missing hooks may not work.", LogLevel.Warn);
         }
         catch (Exception ex)
         {
             Exception cause = ex is TargetInvocationException tie && tie.InnerException is not null
                 ? tie.InnerException : ex;
-            Monitor.Log("Couldn't install the game-click hook: " + cause.GetType().Name + ": " + cause.Message, LogLevel.Error);
+            Monitor.Log("Couldn't install click hooks: " + cause.GetType().Name + ": " + cause.Message, LogLevel.Error);
         }
     }
 
-    private static bool PressLeftClickPrefix(int x, int y)
+    private bool TryPatch(object harmony, MethodInfo patchMethod, Type harmonyMethodType,
+        string targetTypeName, string targetMethodName, Type[] targetParameters,
+        string patchMethodName, bool postfix)
     {
-        ModEntry? instance = _instance;
-        if (instance is null)
-            return true;
-
         try
         {
-            return instance.ProcessLeftClick(x, y);
+            Type targetType = FindType(targetTypeName)
+                ?? throw new TypeLoadException(targetTypeName + " was not found.");
+            MethodInfo original = targetType.GetMethods(Flags).FirstOrDefault(m =>
+                m.Name == targetMethodName &&
+                m.GetParameters().Select(p => p.ParameterType).SequenceEqual(targetParameters))
+                ?? throw new MissingMethodException(targetType.FullName, targetMethodName
+                    + "(" + string.Join(", ", targetParameters.Select(t => t.Name)) + ")");
+
+            MethodInfo patchInfo = typeof(ModEntry).GetMethod(patchMethodName, BindingFlags.Static | BindingFlags.NonPublic)
+                ?? throw new MissingMethodException("Patch method not found: " + patchMethodName);
+            object harmonyMethod = Activator.CreateInstance(harmonyMethodType, new object[] { patchInfo })
+                ?? throw new InvalidOperationException("Couldn't create HarmonyMethod for " + patchMethodName);
+
+            object?[] args = postfix
+                ? new object?[] { original, null, harmonyMethod, null, null }
+                : new object?[] { original, harmonyMethod, null, null, null };
+            patchMethod.Invoke(harmony, args);
+            Monitor.Log("Patched " + targetType.Name + "." + targetMethodName + ".", LogLevel.Trace);
+            return true;
         }
         catch (Exception ex)
         {
-            instance.ClearPendingTap();
-            instance.Monitor.Log("Couldn't process tap: " + ex.GetType().Name + ": " + ex.Message, LogLevel.Warn);
-            return true;
+            Exception cause = ex is TargetInvocationException tie && tie.InnerException is not null
+                ? tie.InnerException : ex;
+            Monitor.Log("Couldn't patch " + targetTypeName + "." + targetMethodName + ": "
+                + cause.GetType().Name + ": " + cause.Message, LogLevel.Error);
+            return false;
         }
     }
 
-    private bool ProcessLeftClick(int x, int y)
+    private static bool GameMenuLeftClickPrefix(int x, int y, bool playSound = true)
     {
-        ClickTarget target = ResolveTarget(x, y);
-        object? identity = _resolvedIdentity;
+        ModEntry? instance = _instance;
+        return instance is null || instance.ProcessLeftClick(x, y);
+    }
 
-        if (target == ClickTarget.None)
-        {
-            ClearPendingTap();
-            return true;
-        }
+    private static bool DayTimeMoneyBoxLeftClickPrefix(int x, int y, bool playSound = true)
+    {
+        ModEntry? instance = _instance;
+        return instance is null || instance.ProcessLeftClick(x, y);
+    }
 
-        bool secondTap = IsSecondTap(target, x, y, identity);
+    private static void DayTimeMoneyBoxBoundsPostfix(int x, int y, ref bool __result)
+    {
+        ModEntry? instance = _instance;
+        if (instance?._config.ClockOpensGameMenu != true)
+            return;
 
-        // First recipe taps are blocked here. The second tap passes through to the
-        // original Game1/vanilla/Better Crafting click pipeline.
-        if (target == ClickTarget.CraftingRecipe)
-        {
-            if (!secondTap)
-                return false;
-
-            ClearPendingTap();
-            return true;
-        }
-
-        // Delay these navigation actions until the second tap and prevent the
-        // native handler from running on either tap.
-        if (!secondTap)
-            return false;
-
-        ClearPendingTap();
-        switch (target)
-        {
-            case ClickTarget.Clock: OpenGameMenu(); break;
-            case ClickTarget.QuestButton: OpenQuestLog(); break;
-            case ClickTarget.MapTab: OpenMenuTab("map"); break;
-            case ClickTarget.CraftingTab: OpenMenuTab("crafting"); break;
-            case ClickTarget.MapBlank: CloseMapTab(); break;
-        }
-        return false;
+        Type? game = FindType("StardewValley.Game1");
+        object? dayBox = game is null ? null : GetStatic(game, "dayTimeMoneyBox");
+        if (game is not null && dayBox is not null && IsClockPanelAt(game, dayBox, x, y))
+            __result = true;
     }
 
     private ClickTarget ResolveTarget(int x, int y)
