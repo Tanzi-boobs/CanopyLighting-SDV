@@ -1,7 +1,7 @@
 {
   "Name": "Double Tap HUD",
   "Author": "Tanzi",
-  "Version": "0.2.1",
+  "Version": "0.2.2",
   "Description": "Require double taps for HUD navigation and crafting recipes; double-tap blank map space to return to the previous tab.",
   "UniqueID": "Tanzi.DoubleTapHUD",
   "EntryDll": "DoubleTapHUD.dll",
