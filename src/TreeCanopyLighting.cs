@@ -156,10 +156,9 @@ internal static class TreeCanopyLighting
                 return;
             }
 
-            // In some Stardew/SMAPI Android builds, currentLocation is exposed as a
-            // property instead of a field. Resolve either form at runtime.
-            object? location = ReadStaticMember(_gameType, "currentLocation");
-            bool outdoors = location is not null && ReadBooleanMember(location, "IsOutdoors", false);
+            // Do not gate canopy rendering on Game1.currentLocation: some Android/Cinderbox
+            // builds expose that member differently, and Tree.draw itself already proves
+            // that this tree is currently being rendered in the active scene.
             int growthStage = Convert.ToInt32(ReadNetValue(__instance, _growthStage, 0));
             bool isStump = Convert.ToBoolean(ReadNetValue(__instance, _stump, false));
             string treeKind = Convert.ToString(ReadNetValue(__instance, _treeKind, "1")) ?? "1";
@@ -171,12 +170,10 @@ internal static class TreeCanopyLighting
             {
                 _diagnosticTreeSamples++;
                 _monitor?.Log(
-                    $"Tree draw sample #{_diagnosticTreeSamples}: location={(location?.GetType().FullName ?? "null")}, outdoors={outdoors}, growthStage={growthStage}, treeType={treeKind}, stump={isStump}.",
+                    $"Tree draw sample #{_diagnosticTreeSamples}: growthStage={growthStage}, treeType={treeKind}, stump={isStump}.",
                     LogLevel.Trace);
             }
 
-            if (!outdoors)
-                return;
             if (growthStage < 5)
                 return;
             if (isStump)
