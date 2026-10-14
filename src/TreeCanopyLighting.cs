@@ -62,6 +62,7 @@ internal static class TreeCanopyLighting
     private static readonly System.Collections.Generic.Dictionary<string, MethodInfo> EffectParameterSetters = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.Dictionary<string, object> EffectTechniques = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.List<CanopyDrawCommand> QueuedCanopies = new();
+    private static object? _queuedSpriteBatch;
     private sealed record CanopyDrawCommand(
         object Texture, object Position, object SourceRect, object EncodedColor,
         float Rotation, object Origin, object Effects, bool IsPine);
@@ -302,6 +303,7 @@ internal static class TreeCanopyLighting
             // Queue the canopy data only. Ending/restarting SpriteBatch for every tree caused
             // severe CPU overhead on Android; the queued overlays are rendered together in
             // one batch per canopy technique at Display.RenderedWorld.
+            _queuedSpriteBatch = batch;
             QueuedCanopies.Add(new CanopyDrawCommand(
                 texture, position, sourceRect, encodedColor, rotation, origin, effects, isPine));
 
@@ -399,13 +401,23 @@ internal static class TreeCanopyLighting
         }
     }
 
-    internal static void RenderQueuedOverlays(object batch)
+    internal static void RenderQueuedOverlays()
     {
         if (QueuedCanopies.Count == 0)
+        {
+            _queuedSpriteBatch = null;
             return;
+        }
 
         CanopyDrawCommand[] pending = QueuedCanopies.ToArray();
         QueuedCanopies.Clear();
+        object? batch = _queuedSpriteBatch;
+        _queuedSpriteBatch = null;
+        if (batch is null)
+        {
+            _monitor?.Log("Skipping queued canopy overlays because the SpriteBatch reference was unavailable.", LogLevel.Warn);
+            return;
+        }
 
         if (_runtimeDisabled || _config is null || !_config.Enabled || _config.OverallStrength <= 0.001f)
             return;
