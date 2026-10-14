@@ -120,7 +120,7 @@ public sealed class ModEntry : Mod
     private static bool GameMenuLeftClickPrefix(int x, int y, bool playSound = true)
     {
         ModEntry? instance = _instance;
-        return instance is null || instance.ProcessLeftClick(x, y);
+        return instance is null || instance.TryProcessLeftClick(x, y);
     }
 
     private static bool DayTimeMoneyBoxLeftClickPrefix(int x, int y, bool playSound = true)
@@ -139,6 +139,62 @@ public sealed class ModEntry : Mod
         object? dayBox = game is null ? null : GetStatic(game, "dayTimeMoneyBox");
         if (game is not null && dayBox is not null && IsClockPanelAt(game, dayBox, x, y))
             __result = true;
+    }
+
+    private bool TryProcessLeftClick(int x, int y)
+    {
+        try
+        {
+            return ProcessLeftClick(x, y);
+        }
+        catch (Exception ex)
+        {
+            ClearPendingTap();
+            Monitor.Log("Couldn't process tap: " + ex.GetType().Name + ": " + ex.Message, LogLevel.Warn);
+            return true;
+        }
+    }
+
+    private bool ProcessLeftClick(int x, int y)
+    {
+        ClickTarget target = ResolveTarget(x, y);
+        object? identity = _resolvedIdentity;
+
+        if (target == ClickTarget.None)
+        {
+            ClearPendingTap();
+            return true;
+        }
+
+        bool secondTap = IsSecondTap(target, x, y, identity);
+
+        // On the first recipe tap, suppress crafting. The second tap is passed
+        // through to the existing vanilla/Better Crafting handler.
+        if (target == ClickTarget.CraftingRecipe)
+        {
+            if (!secondTap)
+                return false;
+
+            ClearPendingTap();
+            return true;
+        }
+
+        // Handle navigation only after the second tap; keep the game's normal
+        // handlers for unrelated clicks and native map markers/close button.
+        if (!secondTap)
+            return false;
+
+        ClearPendingTap();
+        switch (target)
+        {
+            case ClickTarget.Clock: OpenGameMenu(); break;
+            case ClickTarget.QuestButton: OpenQuestLog(); break;
+            case ClickTarget.MapTab: OpenMenuTab("map"); break;
+            case ClickTarget.CraftingTab: OpenMenuTab("crafting"); break;
+            case ClickTarget.MapBlank: CloseMapTab(); break;
+        }
+
+        return false;
     }
 
     private ClickTarget ResolveTarget(int x, int y)
