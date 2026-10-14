@@ -396,19 +396,18 @@ internal static class TreeCanopyLighting
     {
         BatchState state = CaptureBatchState(batch);
 
-        // A custom MonoGame Effect doesn't receive SpriteBatch's internal projection
-        // matrix automatically. Match SpriteEffect.OnApply: user transform * viewport projection.
+        // Reuse Dynamic Shader's exact compiled canopy techniques. Supply the complete
+        // SpriteBatch transform/projection matrix before opening a custom Effect batch.
         SetEffectParameter("MatrixTransform", CreateEffectTransform(batch, state));
 
-        dynamic spriteBatch = batch;
         bool batchOpen = true;
-
         try
         {
-            spriteBatch.End();
+            InvokeSpriteBatchEnd(batch);
             batchOpen = false;
 
-            spriteBatch.Begin(
+            InvokeSpriteBatchBegin(
+                batch,
                 GetEnum("Microsoft.Xna.Framework.Graphics.SpriteSortMode", "Deferred"),
                 GetStaticMember("Microsoft.Xna.Framework.Graphics.BlendState", "AlphaBlend"),
                 GetStaticMember("Microsoft.Xna.Framework.Graphics.SamplerState", "PointClamp"),
@@ -418,32 +417,26 @@ internal static class TreeCanopyLighting
                 state.TransformMatrix);
             batchOpen = true;
 
-            dynamic drawTexture = texture;
-            dynamic drawPosition = position;
-            dynamic drawSourceRect = sourceRect;
-            dynamic drawColor = encodedColor;
-            dynamic drawOrigin = origin;
-            dynamic spriteEffects = effects;
-            spriteBatch.Draw(drawTexture, drawPosition, drawSourceRect, drawColor, rotation, drawOrigin, 4f, spriteEffects, 0f);
+            InvokeSpriteBatchDraw(batch, texture, position, sourceRect, encodedColor, rotation, origin, 4f, effects, 0f);
 
-            spriteBatch.End();
+            InvokeSpriteBatchEnd(batch);
             batchOpen = false;
-            BeginRestoredBatch(spriteBatch, state);
+            BeginRestoredBatch(batch, state);
             batchOpen = true;
         }
         catch
         {
-            // Never leave the game's SpriteBatch closed or leave our effect attached to it.
+            // Never leave the game's SpriteBatch closed. Reflection invocation avoids
+            // dynamic-binder failures with Matrix? on Android's MonoGame build.
             if (batchOpen)
             {
                 try
                 {
-                    spriteBatch.End();
+                    InvokeSpriteBatchEnd(batch);
                     batchOpen = false;
                 }
                 catch
                 {
-                    // A failed End means the batch may already be closed; try restoring it below.
                     batchOpen = false;
                 }
             }
@@ -452,14 +445,127 @@ internal static class TreeCanopyLighting
             {
                 try
                 {
-                    BeginRestoredBatch(spriteBatch, state);
+                    BeginRestoredBatch(batch, state);
                 }
                 catch (Exception restoreException)
                 {
-                    _monitor?.Log("Couldn't restore the game's SpriteBatch after canopy rendering: " + restoreException.Message, LogLevel.Error);
+                    _monitor?.Log(
+                        "Couldn't restore the game's SpriteBatch after canopy rendering: " + restoreException.GetType().Name + ": " + restoreException.Message,
+                        LogLevel.Error);
                 }
             }
+
             throw;
+        }
+    }
+
+    private static void InvokeSpriteBatchEnd(object batch)
+    {
+        MethodInfo? method = batch.GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(candidate => candidate.Name == "End" && candidate.GetParameters().Length == 0);
+
+        if (method is null)
+            throw new MissingMethodException("Couldn't find SpriteBatch.End().");
+
+        InvokeRenderMethod(method, batch, Array.Empty<object?>(), "SpriteBatch.End");
+    }
+
+    private static void InvokeSpriteBatchBegin(
+        object batch,
+        object sortMode,
+        object blendState,
+        object samplerState,
+        object depthStencilState,
+        object rasterizerState,
+        object? effect,
+        object? transformMatrix)
+    {
+        Type matrixType = AccessTools.TypeByName("Microsoft.Xna.Framework.Matrix")
+            ?? throw new InvalidOperationException("Couldn't find MonoGame's Matrix type.");
+
+        MethodInfo? method = batch.GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Where(candidate => candidate.Name == "Begin" && candidate.GetParameters().Length == 7)
+            .FirstOrDefault(candidate =>
+            {
+                ParameterInfo[] parameters = candidate.GetParameters();
+                return parameters[0].ParameterType.IsInstanceOfType(sortMode)
+                    && parameters[1].ParameterType.IsInstanceOfType(blendState)
+                    && parameters[2].ParameterType.IsInstanceOfType(samplerState)
+                    && parameters[3].ParameterType.IsInstanceOfType(depthStencilState)
+                    && parameters[4].ParameterType.IsInstanceOfType(rasterizerState)
+                    && (effect is null || parameters[5].ParameterType.IsInstanceOfType(effect))
+                    && (parameters[6].ParameterType == matrixType
+                        || Nullable.GetUnderlyingType(parameters[6].ParameterType) == matrixType);
+            });
+
+        if (method is null)
+            throw new MissingMethodException("Couldn't find compatible seven-argument SpriteBatch.Begin(..., Effect, Matrix?).");
+
+        InvokeRenderMethod(
+            method,
+            batch,
+            new[] { sortMode, blendState, samplerState, depthStencilState, rasterizerState, effect, transformMatrix },
+            "SpriteBatch.Begin");
+    }
+
+    private static void InvokeSpriteBatchDraw(
+        object batch,
+        object texture,
+        object position,
+        object sourceRect,
+        object color,
+        float rotation,
+        object origin,
+        float scale,
+        object effects,
+        float layerDepth)
+    {
+        Type? rectangleType = AccessTools.TypeByName("Microsoft.Xna.Framework.Rectangle");
+        Type? vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2");
+        Type? colorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Color");
+        Type? effectsType = AccessTools.TypeByName("Microsoft.Xna.Framework.Graphics.SpriteEffects");
+        if (rectangleType is null || vectorType is null || colorType is null || effectsType is null)
+            throw new InvalidOperationException("Couldn't resolve MonoGame drawing types.");
+
+        MethodInfo? method = batch.GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Where(candidate => candidate.Name == "Draw" && candidate.GetParameters().Length == 9)
+            .FirstOrDefault(candidate =>
+            {
+                ParameterInfo[] parameters = candidate.GetParameters();
+                Type? nullableSource = Nullable.GetUnderlyingType(parameters[2].ParameterType);
+                return parameters[0].ParameterType.IsInstanceOfType(texture)
+                    && parameters[1].ParameterType == vectorType
+                    && (parameters[2].ParameterType == rectangleType || nullableSource == rectangleType)
+                    && parameters[3].ParameterType == colorType
+                    && parameters[4].ParameterType == typeof(float)
+                    && parameters[5].ParameterType == vectorType
+                    && parameters[6].ParameterType == typeof(float)
+                    && parameters[7].ParameterType == effectsType
+                    && parameters[8].ParameterType == typeof(float);
+            });
+
+        if (method is null)
+            throw new MissingMethodException("Couldn't find the SpriteBatch.Draw(Texture2D, Vector2, Rectangle?, Color, float, Vector2, float, SpriteEffects, float) overload.");
+
+        InvokeRenderMethod(
+            method,
+            batch,
+            new object?[] { texture, position, sourceRect, color, rotation, origin, scale, effects, layerDepth },
+            "SpriteBatch.Draw canopy");
+    }
+
+    private static object? InvokeRenderMethod(MethodInfo method, object instance, object?[] arguments, string label)
+    {
+        try
+        {
+            return method.Invoke(instance, arguments);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw new InvalidOperationException(label + " failed: " + ex.InnerException.GetType().Name + ": " + ex.InnerException.Message, ex.InnerException);
         }
     }
 
@@ -566,9 +672,10 @@ internal static class TreeCanopyLighting
             ?? throw new InvalidOperationException("Couldn't combine the SpriteBatch transform and projection.");
     }
 
-    private static void BeginRestoredBatch(dynamic spriteBatch, BatchState state)
+    private static void BeginRestoredBatch(object spriteBatch, BatchState state)
     {
-        spriteBatch.Begin(
+        InvokeSpriteBatchBegin(
+            spriteBatch,
             state.SortMode,
             state.BlendState,
             state.SamplerState,
