@@ -142,10 +142,38 @@ internal static class TreeCanopyLighting
             BindingFlags.Static | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Couldn't find the canopy draw hook.");
 
+        Type locationType = AccessTools.TypeByName("StardewValley.GameLocation")
+            ?? throw new InvalidOperationException("Couldn't find StardewValley.GameLocation.");
+        MethodInfo? aboveFrontLayerMethod = locationType
+            .GetMethods(InstanceFlags)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "drawAboveFrontLayer")
+                    return false;
+
+                ParameterInfo[] parameters = method.GetParameters();
+                return parameters.Length == 1
+                    && parameters[0].ParameterType.FullName == "Microsoft.Xna.Framework.Graphics.SpriteBatch";
+            });
+
+        if (aboveFrontLayerMethod is null)
+            throw new InvalidOperationException("Couldn't find GameLocation.drawAboveFrontLayer(SpriteBatch).");
+
+        MethodInfo flushPostfix = typeof(TreeCanopyLighting).GetMethod(
+            nameof(OnAboveFrontLayerDrawPostfix),
+            BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Couldn't find the above-front-layer flush hook.");
+
         _harmony = new Harmony(HarmonyId);
         _harmony.Patch(drawMethod, postfix: new HarmonyMethod(postfix));
+        _harmony.Patch(aboveFrontLayerMethod, postfix: new HarmonyMethod(flushPostfix));
 
-        monitor.Log("Found bundled canopy shader asset and installed the Tree.draw hook.", LogLevel.Info);
+        monitor.Log("Installed canopy hooks on Tree.draw and GameLocation.drawAboveFrontLayer.", LogLevel.Info);
+    }
+
+    private static void OnAboveFrontLayerDrawPostfix()
+    {
+        RenderQueuedOverlays();
     }
 
     private static void OnTreeDrawPostfix(object __instance, object __0)
@@ -291,6 +319,27 @@ internal static class TreeCanopyLighting
 
             float tileX = ReadFloatMember(tile, "X");
             float tileY = ReadFloatMember(tile, "Y");
+
+            // Vanilla fades a tree when the player walks underneath/behind its canopy.
+            // The standalone overlay is rendered after the tree's original draw, so skip
+            // that one canopy in the player's fade zone instead of painting opaque lit
+            // pixels over the partially transparent vanilla sprite.
+            object? player = ReadStaticMember(_gameType, "player");
+            object? playerPosition = player is null ? null : ReadMember(player, "Position");
+            if (playerPosition is not null)
+            {
+                float playerX = ReadFloatMember(playerPosition, "X") + 32f;
+                float playerY = ReadFloatMember(playerPosition, "Y") + 32f;
+                float treeCenterX = tileX * 64f + 32f;
+                float treeBaseY = tileY * 64f + 64f;
+                bool playerInCanopyFadeZone =
+                    MathF.Abs(playerX - treeCenterX) <= 56f
+                    && playerY >= treeBaseY - 192f
+                    && playerY <= treeBaseY + 48f;
+                if (playerInCanopyFadeZone)
+                    return;
+            }
+
             float viewX = ReadFloatMember(viewport, "X");
             float viewY = ReadFloatMember(viewport, "Y");
             object position = Activator.CreateInstance(
