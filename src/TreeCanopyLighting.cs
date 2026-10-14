@@ -47,6 +47,21 @@ internal static class TreeCanopyLighting
     private static bool _loggedSuccessfulRender;
     private static int _diagnosticTreeSamples;
 
+    // Cache reflection metadata used inside the per-tree render hook. Looking up methods,
+    // shader parameter indexers, and SetValue overloads for every tree every frame is costly
+    // on mobile runtimes.
+    private static MethodInfo? _spriteBatchEndMethod;
+    private static MethodInfo? _spriteBatchBeginMethod;
+    private static MethodInfo? _spriteBatchDrawMethod;
+    private static object? _effectParametersCollection;
+    private static object? _effectTechniquesCollection;
+    private static PropertyInfo? _effectParameterIndexer;
+    private static PropertyInfo? _effectTechniqueIndexer;
+    private static PropertyInfo? _effectCurrentTechniqueProperty;
+    private static readonly System.Collections.Generic.Dictionary<string, object> EffectParameters = new(StringComparer.Ordinal);
+    private static readonly System.Collections.Generic.Dictionary<string, MethodInfo> EffectParameterSetters = new(StringComparer.Ordinal);
+    private static readonly System.Collections.Generic.Dictionary<string, object> EffectTechniques = new(StringComparer.Ordinal);
+
     internal static void UpdateConfig(ModConfig config)
     {
         _config = config;
@@ -345,6 +360,16 @@ internal static class TreeCanopyLighting
 
         _effect = Activator.CreateInstance(effectType, new object[] { graphicsDevice, File.ReadAllBytes(_shaderPath) })
             ?? throw new InvalidOperationException("MonoGame failed to create the bundled canopy Effect.");
+
+        CacheEffectMetadata();
+
+        // These color values never change during play. Set them once rather than invoking
+        // reflection and allocating Vector4 values for every visible mature tree.
+        SetVector4("TreeCanopyLightColor", 1.05f, 1.00f, 0.90f, 1f);
+        SetVector4("TreeCanopyShadowColor", 0.78f, 0.84f, 0.92f, 1f);
+        SetVector4("TextureGuidedPineLightColor", 1.05f, 1.00f, 0.92f, 1f);
+        SetVector4("TextureGuidedPineShadowColor", 0.78f, 0.84f, 0.92f, 1f);
+        SetVector4("TextureGuidedPineRimColor", 1.12f, 1.06f, 0.90f, 1f);
     }
 
     private static void SetCanopyParameters(bool isPine, float hour, float solar)
@@ -365,22 +390,20 @@ internal static class TreeCanopyLighting
         SetCurrentTechnique(technique);
         SetEffectParameter("TreeCanopyLightSunDirection", sunDirection);
 
-        float strength = Math.Clamp(_config.OverallStrength, 0f, 2f) * solar;
+        // Keep runtime multipliers inside a conservative range even when an older config.json
+        // contains values from pre-tuning releases. In particular, broadleaf exposure is
+        // exponential in the shader and can saturate whole canopies at high values.
+        float strength = Math.Clamp(_config.OverallStrength, 0f, 1.25f) * solar;
         if (!isPine)
         {
-            SetVector4("TreeCanopyLightColor", 1.05f, 1.00f, 0.90f, 1f);
-            SetVector4("TreeCanopyShadowColor", 0.78f, 0.84f, 0.92f, 1f);
-            SetFloat("TreeCanopyLightStrength", Math.Clamp(_config.OakLightStrength, 0f, 5f) * strength);
-            SetFloat("TreeCanopyShadowStrength", Math.Clamp(_config.OakShadowStrength, 0f, 5f) * strength);
+            SetFloat("TreeCanopyLightStrength", Math.Clamp(_config.OakLightStrength, 0f, 1.75f) * strength);
+            SetFloat("TreeCanopyShadowStrength", Math.Clamp(_config.OakShadowStrength, 0f, 3f) * strength);
         }
         else
         {
-            SetVector4("TextureGuidedPineLightColor", 1.05f, 1.00f, 0.92f, 1f);
-            SetVector4("TextureGuidedPineShadowColor", 0.78f, 0.84f, 0.92f, 1f);
-            SetVector4("TextureGuidedPineRimColor", 1.12f, 1.06f, 0.90f, 1f);
-            SetFloat("TextureGuidedPineLightStrength", Math.Clamp(_config.PineLightStrength, 0f, 5f) * strength);
-            SetFloat("TextureGuidedPineShadowStrength", Math.Clamp(_config.PineShadowStrength, 0f, 5f) * strength);
-            SetFloat("TextureGuidedPineRimStrength", Math.Clamp(_config.PineRimStrength, 0f, 5f) * strength);
+            SetFloat("TextureGuidedPineLightStrength", Math.Clamp(_config.PineLightStrength, 0f, 3f) * strength);
+            SetFloat("TextureGuidedPineShadowStrength", Math.Clamp(_config.PineShadowStrength, 0f, 3f) * strength);
+            SetFloat("TextureGuidedPineRimStrength", Math.Clamp(_config.PineRimStrength, 0f, 3f) * strength);
         }
     }
 
@@ -461,9 +484,15 @@ internal static class TreeCanopyLighting
 
     private static void InvokeSpriteBatchEnd(object batch)
     {
-        MethodInfo? method = batch.GetType()
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .FirstOrDefault(candidate => candidate.Name == "End" && candidate.GetParameters().Length == 0);
+        MethodInfo? method = _spriteBatchEndMethod;
+        if (method is null)
+        {
+            method = batch.GetType()
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(candidate => candidate.Name == "End" && candidate.GetParameters().Length == 0);
+
+            _spriteBatchEndMethod = method;
+        }
 
         if (method is null)
             throw new MissingMethodException("Couldn't find SpriteBatch.End().");
@@ -484,21 +513,26 @@ internal static class TreeCanopyLighting
         Type matrixType = AccessTools.TypeByName("Microsoft.Xna.Framework.Matrix")
             ?? throw new InvalidOperationException("Couldn't find MonoGame's Matrix type.");
 
-        MethodInfo? method = batch.GetType()
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Where(candidate => candidate.Name == "Begin" && candidate.GetParameters().Length == 7)
-            .FirstOrDefault(candidate =>
-            {
-                ParameterInfo[] parameters = candidate.GetParameters();
-                return parameters[0].ParameterType.IsInstanceOfType(sortMode)
-                    && parameters[1].ParameterType.IsInstanceOfType(blendState)
-                    && parameters[2].ParameterType.IsInstanceOfType(samplerState)
-                    && parameters[3].ParameterType.IsInstanceOfType(depthStencilState)
-                    && parameters[4].ParameterType.IsInstanceOfType(rasterizerState)
-                    && (effect is null || parameters[5].ParameterType.IsInstanceOfType(effect))
-                    && (parameters[6].ParameterType == matrixType
-                        || Nullable.GetUnderlyingType(parameters[6].ParameterType) == matrixType);
-            });
+        MethodInfo? method = _spriteBatchBeginMethod;
+        if (method is null)
+        {
+            method = batch.GetType()
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .Where(candidate => candidate.Name == "Begin" && candidate.GetParameters().Length == 7)
+                .FirstOrDefault(candidate =>
+                {
+                    ParameterInfo[] parameters = candidate.GetParameters();
+                    return parameters[0].ParameterType.IsInstanceOfType(sortMode)
+                        && parameters[1].ParameterType.IsInstanceOfType(blendState)
+                        && parameters[2].ParameterType.IsInstanceOfType(samplerState)
+                        && parameters[3].ParameterType.IsInstanceOfType(depthStencilState)
+                        && parameters[4].ParameterType.IsInstanceOfType(rasterizerState)
+                        && (effect is null || parameters[5].ParameterType.IsInstanceOfType(effect))
+                        && (parameters[6].ParameterType == matrixType
+                            || Nullable.GetUnderlyingType(parameters[6].ParameterType) == matrixType);
+                });
+            _spriteBatchBeginMethod = method;
+        }
 
         if (method is null)
             throw new MissingMethodException("Couldn't find compatible seven-argument SpriteBatch.Begin(..., Effect, Matrix?).");
@@ -529,23 +563,28 @@ internal static class TreeCanopyLighting
         if (rectangleType is null || vectorType is null || colorType is null || effectsType is null)
             throw new InvalidOperationException("Couldn't resolve MonoGame drawing types.");
 
-        MethodInfo? method = batch.GetType()
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Where(candidate => candidate.Name == "Draw" && candidate.GetParameters().Length == 9)
-            .FirstOrDefault(candidate =>
-            {
-                ParameterInfo[] parameters = candidate.GetParameters();
-                Type? nullableSource = Nullable.GetUnderlyingType(parameters[2].ParameterType);
-                return parameters[0].ParameterType.IsInstanceOfType(texture)
-                    && parameters[1].ParameterType == vectorType
-                    && (parameters[2].ParameterType == rectangleType || nullableSource == rectangleType)
-                    && parameters[3].ParameterType == colorType
-                    && parameters[4].ParameterType == typeof(float)
-                    && parameters[5].ParameterType == vectorType
-                    && parameters[6].ParameterType == typeof(float)
-                    && parameters[7].ParameterType == effectsType
-                    && parameters[8].ParameterType == typeof(float);
-            });
+        MethodInfo? method = _spriteBatchDrawMethod;
+        if (method is null)
+        {
+            method = batch.GetType()
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .Where(candidate => candidate.Name == "Draw" && candidate.GetParameters().Length == 9)
+                .FirstOrDefault(candidate =>
+                {
+                    ParameterInfo[] parameters = candidate.GetParameters();
+                    Type? nullableSource = Nullable.GetUnderlyingType(parameters[2].ParameterType);
+                    return parameters[0].ParameterType.IsInstanceOfType(texture)
+                        && parameters[1].ParameterType == vectorType
+                        && (parameters[2].ParameterType == rectangleType || nullableSource == rectangleType)
+                        && parameters[3].ParameterType == colorType
+                        && parameters[4].ParameterType == typeof(float)
+                        && parameters[5].ParameterType == vectorType
+                        && parameters[6].ParameterType == typeof(float)
+                        && parameters[7].ParameterType == effectsType
+                        && parameters[8].ParameterType == typeof(float);
+                });
+            _spriteBatchDrawMethod = method;
+        }
 
         if (method is null)
             throw new MissingMethodException("Couldn't find the SpriteBatch.Draw(Texture2D, Vector2, Rectangle?, Color, float, Vector2, float, SpriteEffects, float) overload.");
@@ -701,27 +740,20 @@ internal static class TreeCanopyLighting
 
     private static void SetCurrentTechnique(string name)
     {
-        object? techniques = ReadMember(_effect!, "Techniques");
-        if (techniques is null)
-            throw new InvalidOperationException("The bundled Effect has no technique collection.");
+        if (!EffectTechniques.TryGetValue(name, out object? technique))
+        {
+            if (_effectTechniquesCollection is null || _effectTechniqueIndexer is null)
+                throw new InvalidOperationException("The bundled Effect has no cached technique collection.");
 
-        PropertyInfo? indexer = techniques.GetType().GetProperties()
-            .FirstOrDefault(property =>
-            {
-                ParameterInfo[] indexParameters = property.GetIndexParameters();
-                return property.Name == "Item"
-                    && indexParameters.Length == 1
-                    && indexParameters[0].ParameterType == typeof(string);
-            });
+            technique = _effectTechniqueIndexer.GetValue(_effectTechniquesCollection, new object[] { name });
+            if (technique is null)
+                throw new InvalidOperationException("The bundled Effect is missing technique " + name + ".");
+            EffectTechniques[name] = technique;
+        }
 
-        object? technique = indexer?.GetValue(techniques, new object[] { name });
-        if (technique is null)
-            throw new InvalidOperationException("The bundled Effect is missing technique " + name + ".");
-
-        PropertyInfo? currentTechnique = AccessTools.Property(_effect!.GetType(), "CurrentTechnique");
-        if (currentTechnique?.CanWrite != true)
+        if (_effectCurrentTechniqueProperty?.CanWrite != true)
             throw new InvalidOperationException("Couldn't change the current canopy shader technique.");
-        currentTechnique.SetValue(_effect, technique);
+        _effectCurrentTechniqueProperty.SetValue(_effect, technique);
     }
 
     private static void SetVector4(string name, float x, float y, float z, float w)
@@ -734,13 +766,22 @@ internal static class TreeCanopyLighting
 
     private static void SetFloat(string name, float value) => SetEffectParameter(name, value);
 
-    private static void SetEffectParameter(string name, object value)
+    private static void CacheEffectMetadata()
     {
-        object? parameters = ReadMember(_effect!, "Parameters");
-        if (parameters is null)
-            throw new InvalidOperationException("The bundled Effect has no parameter collection.");
+        _effectParametersCollection = ReadMember(_effect!, "Parameters");
+        _effectTechniquesCollection = ReadMember(_effect!, "Techniques");
+        if (_effectParametersCollection is null || _effectTechniquesCollection is null)
+            throw new InvalidOperationException("The bundled Effect has no parameter/technique collection.");
 
-        PropertyInfo? indexer = parameters.GetType().GetProperties()
+        _effectParameterIndexer = FindStringIndexer(_effectParametersCollection.GetType());
+        _effectTechniqueIndexer = FindStringIndexer(_effectTechniquesCollection.GetType());
+        _effectCurrentTechniqueProperty = AccessTools.Property(_effect!.GetType(), "CurrentTechnique");
+        if (_effectParameterIndexer is null || _effectTechniqueIndexer is null || _effectCurrentTechniqueProperty is null)
+            throw new InvalidOperationException("Couldn't cache the bundled Effect's reflection metadata.");
+    }
+
+    private static PropertyInfo? FindStringIndexer(Type type) =>
+        type.GetProperties()
             .FirstOrDefault(property =>
             {
                 ParameterInfo[] indexParameters = property.GetIndexParameters();
@@ -749,21 +790,34 @@ internal static class TreeCanopyLighting
                     && indexParameters[0].ParameterType == typeof(string);
             });
 
-        object? parameter = indexer?.GetValue(parameters, new object[] { name });
-        if (parameter is null)
-            throw new InvalidOperationException("The bundled Effect is missing parameter " + name + ".");
+    private static void SetEffectParameter(string name, object value)
+    {
+        if (_effectParametersCollection is null || _effectParameterIndexer is null)
+            throw new InvalidOperationException("The bundled Effect parameter collection wasn't initialized.");
 
-        MethodInfo? setValue = parameter.GetType().GetMethods()
-            .FirstOrDefault(method =>
-            {
-                if (method.Name != "SetValue")
-                    return false;
-                ParameterInfo[] parametersForMethod = method.GetParameters();
-                return parametersForMethod.Length == 1 && parametersForMethod[0].ParameterType.IsInstanceOfType(value);
-            });
+        if (!EffectParameters.TryGetValue(name, out object? parameter))
+        {
+            parameter = _effectParameterIndexer.GetValue(_effectParametersCollection, new object[] { name });
+            if (parameter is null)
+                throw new InvalidOperationException("The bundled Effect is missing parameter " + name + ".");
+            EffectParameters[name] = parameter;
+        }
 
-        if (setValue is null)
-            throw new InvalidOperationException("Couldn't set shader parameter " + name + ".");
+        if (!EffectParameterSetters.TryGetValue(name, out MethodInfo? setValue))
+        {
+            setValue = parameter.GetType().GetMethods()
+                .FirstOrDefault(method =>
+                {
+                    if (method.Name != "SetValue")
+                        return false;
+                    ParameterInfo[] parametersForMethod = method.GetParameters();
+                    return parametersForMethod.Length == 1 && parametersForMethod[0].ParameterType.IsInstanceOfType(value);
+                });
+            if (setValue is null)
+                throw new InvalidOperationException("Couldn't set shader parameter " + name + ".");
+            EffectParameterSetters[name] = setValue;
+        }
+
         setValue.Invoke(parameter, new[] { value });
     }
 
