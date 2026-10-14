@@ -1,0 +1,45 @@
+name: Build and export Double Tap HUD
+
+on:
+  push:
+    branches: [ doubletap-build-artifact ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+      - name: Build and save diagnostics
+        shell: bash
+        run: |
+          mkdir -p export
+          dotnet build ci/SmapiStub/SmapiStub.csproj --configuration Release > export/stub-build.log 2>&1
+          stub_status=$?
+          dotnet build DoubleTapHUD.csproj --configuration Release > export/mod-build.log 2>&1
+          mod_status=$?
+          printf 'stub=%s\nmod=%s\n' "$stub_status" "$mod_status" > export/build-status.txt
+          if [ "$stub_status" -eq 0 ] && [ "$mod_status" -eq 0 ]; then
+            mkdir -p export/DoubleTapHUD
+            cp bin/Release/net6.0/DoubleTapHUD.dll manifest.json config.json README.md export/DoubleTapHUD/
+            cd export
+            zip -qr DoubleTapHUD-0.2.1-installable.zip DoubleTapHUD
+            cd ..
+          fi
+      - name: Commit build output for download and troubleshooting
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add export/
+          if ! git diff --cached --quiet; then
+            git commit -m "Export Double Tap HUD build and diagnostics"
+            git push origin HEAD:doubletap-build-artifact
+          fi
