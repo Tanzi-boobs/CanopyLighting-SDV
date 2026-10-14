@@ -22,7 +22,9 @@ internal sealed class ModConfig
     /// <summary>Broadleaf-profile back-facing canopy shading. Does not draw a ground shadow.</summary>
     public float OakShadowStrength { get; set; } = 2.97f;
 
-    public float PineLightStrength { get; set; } = 3.0f;
+    /// <summary>Lightweight pine-profile brightness (0-1.75).</summary>
+    public float PineLightStrength { get; set; } = 1.54f;
+    /// <summary>Lightweight pine-profile shading (0-2.5).</summary>
     public float PineShadowStrength { get; set; } = 2.02f;
     public float PineRimStrength { get; set; } = 2.67f;
 }
