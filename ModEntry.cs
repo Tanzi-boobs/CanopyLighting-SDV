@@ -53,7 +53,7 @@ public sealed class ModEntry : Mod
                 nameof(PressLeftClickPrefix), BindingFlags.Static | BindingFlags.NonPublic)
                 ?? throw new MissingMethodException("PressLeftClickPrefix was not found.");
 
-            object harmony = Activator.CreateInstance(harmonyType, new object[] { ModManifest.UniqueID })
+            object harmony = Activator.CreateInstance(harmonyType, new object[] { "Tanzi.DoubleTapHUD" })
                 ?? throw new InvalidOperationException("Couldn't create a Harmony instance.");
             object prefix = Activator.CreateInstance(harmonyMethodType, new object[] { prefixMethod })
                 ?? throw new InvalidOperationException("Couldn't create a HarmonyMethod.");
