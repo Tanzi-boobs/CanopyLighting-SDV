@@ -1,3 +1,5 @@
+using StardewModdingAPI.Events;
+
 namespace StardewModdingAPI;
 
 public enum LogLevel
@@ -28,6 +30,7 @@ public interface IModHelper
 {
     string DirectoryPath { get; }
     IModRegistry ModRegistry { get; }
+    IModEvents Events { get; }
     T ReadConfig<T>() where T : new();
     void WriteConfig<T>(T config);
 }
