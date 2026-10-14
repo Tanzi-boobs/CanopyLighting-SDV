@@ -1,9 +1,11 @@
   Determining projects to restore...
-  Restored /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj (in 66 ms).
-  DoubleTapHUD -> /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/bin/Release/net6.0/DoubleTapHUD.dll
+  Restored /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj (in 68 ms).
+/home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/ModEntry.cs(56,83): error CS0103: The name 'ModManifest' does not exist in the current context [/home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj]
 
-Build succeeded.
+Build FAILED.
+
+/home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/ModEntry.cs(56,83): error CS0103: The name 'ModManifest' does not exist in the current context [/home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/DoubleTapHUD.csproj]
     0 Warning(s)
-    0 Error(s)
+    1 Error(s)
 
-Time Elapsed 00:00:01.58
+Time Elapsed 00:00:01.62

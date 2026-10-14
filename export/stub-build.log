@@ -1,9 +1,9 @@
   Determining projects to restore...
-  Restored /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/ci/SmapiStub/SmapiStub.csproj (in 80 ms).
+  Restored /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/ci/SmapiStub/SmapiStub.csproj (in 81 ms).
   SmapiStub -> /home/runner/work/CanopyLighting-SDV/CanopyLighting-SDV/ci/SmapiStub/bin/Release/net6.0/StardewModdingAPI.dll
 
 Build succeeded.
     0 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:06.09
+Time Elapsed 00:00:09.05
