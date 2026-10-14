@@ -63,6 +63,9 @@ internal static class TreeCanopyLighting
     private static readonly System.Collections.Generic.Dictionary<string, object> EffectTechniques = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.List<CanopyDrawCommand> QueuedCanopies = new();
     private static object? _queuedSpriteBatch;
+    // Capture the world-batch transform inside Tree.draw; RenderedWorld may use a
+    // different transform after the game switches render phases.
+    private static BatchState? _queuedCanopyDrawState;
     private sealed record CanopyDrawCommand(
         object Texture, object Position, object SourceRect, object EncodedColor,
         float Rotation, object Origin, object Effects, bool IsPine);
@@ -303,7 +306,11 @@ internal static class TreeCanopyLighting
             // Queue the canopy data only. Ending/restarting SpriteBatch for every tree caused
             // severe CPU overhead on Android; the queued overlays are rendered together in
             // one batch per canopy technique at Display.RenderedWorld.
-            _queuedSpriteBatch = batch;
+            if (QueuedCanopies.Count == 0)
+            {
+                _queuedSpriteBatch = batch;
+                _queuedCanopyDrawState = CaptureBatchState(batch);
+            }
             QueuedCanopies.Add(new CanopyDrawCommand(
                 texture, position, sourceRect, encodedColor, rotation, origin, effects, isPine));
 
@@ -406,13 +413,16 @@ internal static class TreeCanopyLighting
         if (QueuedCanopies.Count == 0)
         {
             _queuedSpriteBatch = null;
+            _queuedCanopyDrawState = null;
             return;
         }
 
         CanopyDrawCommand[] pending = QueuedCanopies.ToArray();
         QueuedCanopies.Clear();
         object? batch = _queuedSpriteBatch;
+        BatchState? queuedDrawState = _queuedCanopyDrawState;
         _queuedSpriteBatch = null;
+        _queuedCanopyDrawState = null;
         if (batch is null)
         {
             _monitor?.Log("Skipping queued canopy overlays because the SpriteBatch reference was unavailable.", LogLevel.Warn);
@@ -428,14 +438,17 @@ internal static class TreeCanopyLighting
         if (solar <= 0.001f)
             return;
 
-        BatchState? state = null;
+        BatchState? restoreState = null;
         bool batchOpen = false;
         try
         {
             EnsureEffectLoaded();
-            state = CaptureBatchState(batch);
+            // Keep the event-time state only for restoration. Shader positioning must use
+            // the matrix captured when the original tree was actually drawn.
+            restoreState = CaptureBatchState(batch);
             batchOpen = true;
-            object effectTransform = CreateEffectTransform(batch, state);
+            BatchState shaderState = queuedDrawState ?? restoreState;
+            object effectTransform = CreateEffectTransform(batch, shaderState);
 
             // Flush the world's existing sprites once, then draw each shader technique
             // as a group. This avoids four SpriteBatch state transitions per mature tree.
@@ -454,13 +467,13 @@ internal static class TreeCanopyLighting
 
                 InvokeSpriteBatchBegin(
                     batch,
-                    state.SortMode,
-                    state.BlendState,
-                    state.SamplerState,
-                    state.DepthStencilState,
-                    state.RasterizerState,
+                    shaderState.SortMode,
+                    shaderState.BlendState,
+                    shaderState.SamplerState,
+                    shaderState.DepthStencilState,
+                    shaderState.RasterizerState,
                     _effect,
-                    state.TransformMatrix);
+                    shaderState.TransformMatrix);
                 batchOpen = true;
 
                 foreach (CanopyDrawCommand item in pending)
@@ -477,7 +490,7 @@ internal static class TreeCanopyLighting
                 batchOpen = false;
             }
 
-            BeginRestoredBatch(batch, state);
+            BeginRestoredBatch(batch, restoreState);
             batchOpen = true;
 
             if (!_loggedSuccessfulRender)
@@ -501,11 +514,11 @@ internal static class TreeCanopyLighting
                 }
             }
 
-            if (!batchOpen && state is not null)
+            if (!batchOpen && restoreState is not null)
             {
                 try
                 {
-                    BeginRestoredBatch(batch, state);
+                    BeginRestoredBatch(batch, restoreState);
                     batchOpen = true;
                 }
                 catch (Exception restoreException)
