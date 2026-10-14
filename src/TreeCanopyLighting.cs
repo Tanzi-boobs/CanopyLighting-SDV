@@ -61,6 +61,10 @@ internal static class TreeCanopyLighting
     private static readonly System.Collections.Generic.Dictionary<string, object> EffectParameters = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.Dictionary<string, MethodInfo> EffectParameterSetters = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.Dictionary<string, object> EffectTechniques = new(StringComparer.Ordinal);
+    private static readonly System.Collections.Generic.List<CanopyDrawCommand> QueuedCanopies = new();
+    private sealed record CanopyDrawCommand(
+        object Texture, object Position, object SourceRect, object EncodedColor,
+        float Rotation, object Origin, object Effects, bool IsPine);
 
     internal static void UpdateConfig(ModConfig config)
     {
@@ -295,24 +299,12 @@ internal static class TreeCanopyLighting
             if (batch is null)
                 return;
 
-            EnsureEffectLoaded();
-            SetCanopyParameters(isPine, hour, solar);
+            // Queue the canopy data only. Ending/restarting SpriteBatch for every tree caused
+            // severe CPU overhead on Android; the queued overlays are rendered together in
+            // one batch per canopy technique at Display.RenderedWorld.
+            QueuedCanopies.Add(new CanopyDrawCommand(
+                texture, position, sourceRect, encodedColor, rotation, origin, effects, isPine));
 
-            DrawCanopyWithEffect(
-                batch,
-                texture,
-                position,
-                sourceRect,
-                encodedColor,
-                rotation,
-                origin,
-                effects);
-
-            if (!_loggedSuccessfulRender)
-            {
-                _loggedSuccessfulRender = true;
-                _monitor?.Log($"Canopy shader drew its first overlay at {time:0000} for treeType={treeKind}.", LogLevel.Info);
-            }
         }
         catch (Exception ex)
         {
@@ -407,50 +399,82 @@ internal static class TreeCanopyLighting
         }
     }
 
-    private static void DrawCanopyWithEffect(
-        object batch,
-        object texture,
-        object position,
-        object sourceRect,
-        object encodedColor,
-        float rotation,
-        object origin,
-        object effects)
+    internal static void RenderQueuedOverlays(object batch)
     {
-        BatchState state = CaptureBatchState(batch);
+        if (QueuedCanopies.Count == 0)
+            return;
 
-        // Reuse Dynamic Shader's exact compiled canopy techniques. Supply the complete
-        // SpriteBatch transform/projection matrix before opening a custom Effect batch.
-        SetEffectParameter("MatrixTransform", CreateEffectTransform(batch, state));
+        CanopyDrawCommand[] pending = QueuedCanopies.ToArray();
+        QueuedCanopies.Clear();
 
+        if (_runtimeDisabled || _config is null || !_config.Enabled || _config.OverallStrength <= 0.001f)
+            return;
+
+        int time = Convert.ToInt32(_timeOfDay?.GetValue(null) ?? 1200);
+        float hour = time / 100f;
+        float solar = GetDaylightFactor(hour);
+        if (solar <= 0.001f)
+            return;
+
+        BatchState? state = null;
         bool batchOpen = true;
         try
         {
+            EnsureEffectLoaded();
+            state = CaptureBatchState(batch);
+            object effectTransform = CreateEffectTransform(batch, state);
+
+            // Flush the world's existing sprites once, then draw each shader technique
+            // as a group. This avoids four SpriteBatch state transitions per mature tree.
             InvokeSpriteBatchEnd(batch);
             batchOpen = false;
 
-            InvokeSpriteBatchBegin(
-                batch,
-                GetEnum("Microsoft.Xna.Framework.Graphics.SpriteSortMode", "Deferred"),
-                GetStaticMember("Microsoft.Xna.Framework.Graphics.BlendState", "AlphaBlend"),
-                GetStaticMember("Microsoft.Xna.Framework.Graphics.SamplerState", "PointClamp"),
-                GetStaticMember("Microsoft.Xna.Framework.Graphics.DepthStencilState", "None"),
-                GetStaticMember("Microsoft.Xna.Framework.Graphics.RasterizerState", "CullCounterClockwise"),
-                _effect,
-                state.TransformMatrix);
-            batchOpen = true;
+            for (int group = 0; group < 2; group++)
+            {
+                bool pine = group == 1;
+                bool hasCanopies = pending.Any(item => item.IsPine == pine);
+                if (!hasCanopies)
+                    continue;
 
-            InvokeSpriteBatchDraw(batch, texture, position, sourceRect, encodedColor, rotation, origin, 4f, effects, 0f);
+                SetCanopyParameters(pine, hour, solar);
+                SetEffectParameter("MatrixTransform", effectTransform);
 
-            InvokeSpriteBatchEnd(batch);
-            batchOpen = false;
+                InvokeSpriteBatchBegin(
+                    batch,
+                    state.SortMode,
+                    state.BlendState,
+                    state.SamplerState,
+                    state.DepthStencilState,
+                    state.RasterizerState,
+                    _effect,
+                    state.TransformMatrix);
+                batchOpen = true;
+
+                foreach (CanopyDrawCommand item in pending)
+                {
+                    if (item.IsPine != pine)
+                        continue;
+
+                    InvokeSpriteBatchDraw(
+                        batch, item.Texture, item.Position, item.SourceRect, item.EncodedColor,
+                        item.Rotation, item.Origin, 4f, item.Effects, 0f);
+                }
+
+                InvokeSpriteBatchEnd(batch);
+                batchOpen = false;
+            }
+
             BeginRestoredBatch(batch, state);
             batchOpen = true;
+
+            if (!_loggedSuccessfulRender)
+            {
+                _loggedSuccessfulRender = true;
+                _monitor?.Log($"Canopy shader rendered its first batched overlay pass at {time:0000}; queued={pending.Length}.", LogLevel.Info);
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // Never leave the game's SpriteBatch closed. Reflection invocation avoids
-            // dynamic-binder failures with Matrix? on Android's MonoGame build.
             if (batchOpen)
             {
                 try
@@ -460,25 +484,34 @@ internal static class TreeCanopyLighting
                 }
                 catch
                 {
-                    batchOpen = false;
+                    // The batch may already have been closed by a failed End invocation.
                 }
             }
 
-            if (!batchOpen)
+            if (!batchOpen && state is not null)
             {
                 try
                 {
                     BeginRestoredBatch(batch, state);
+                    batchOpen = true;
                 }
                 catch (Exception restoreException)
                 {
                     _monitor?.Log(
-                        "Couldn't restore the game's SpriteBatch after canopy rendering: " + restoreException.GetType().Name + ": " + restoreException.Message,
+                        "Couldn't restore SpriteBatch after batched canopy rendering: " +
+                        restoreException.GetType().Name + ": " + restoreException.Message,
                         LogLevel.Error);
                 }
             }
 
-            throw;
+            _runtimeDisabled = true;
+            if (!_loggedRuntimeFailure)
+            {
+                _loggedRuntimeFailure = true;
+                _monitor?.Log(
+                    "Batched canopy rendering disabled after an error: " + ex.GetType().Name + ": " + ex.Message,
+                    LogLevel.Warn);
+            }
         }
     }
 
