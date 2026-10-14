@@ -417,11 +417,12 @@ internal static class TreeCanopyLighting
             return;
 
         BatchState? state = null;
-        bool batchOpen = true;
+        bool batchOpen = false;
         try
         {
             EnsureEffectLoaded();
             state = CaptureBatchState(batch);
+            batchOpen = true;
             object effectTransform = CreateEffectTransform(batch, state);
 
             // Flush the world's existing sprites once, then draw each shader technique
