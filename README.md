@@ -23,4 +23,4 @@ The personal-use ZIP includes the compiled shader supplied by the user. That bin
 
 GitHub Actions run #142 compiled the current C# source successfully. This verifies compilation only, not live rendering. In the next in-game test, check whether `Canopy shader drew its first overlay` is logged and whether any new SpriteBatch exception occurs. Visual appearance must be confirmed in Cinderbox before the shader parameters are tuned further.
 
-[Build run #142](https://github.com/Tanzi-boobs/CanopyLighting-SDV/actions/runs/38532636599)
+[Build run #141](https://github.com/Tanzi-boobs/CanopyLighting-SDV/actions/runs/38532636599)
