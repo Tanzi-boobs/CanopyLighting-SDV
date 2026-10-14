@@ -19,6 +19,7 @@ jobs:
       - name: Build and save diagnostics
         shell: bash
         run: |
+          set +e
           mkdir -p export
           dotnet build ci/SmapiStub/SmapiStub.csproj --configuration Release > export/stub-build.log 2>&1
           stub_status=$?
