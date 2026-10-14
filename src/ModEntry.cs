@@ -122,7 +122,14 @@ public sealed class ModEntry : Mod
             (Func<bool>)(() => Config.EnablePineCanopy),
             (Action<bool>)(value => Config.EnablePineCanopy = value),
             (Func<string>)(() => "Enable pine lighting"),
-            (Func<string>)(() => "Apply the texture-guided lighting profile to mature pine canopies."),
+            (Func<string>)(() => "Apply directional lighting to mature pine canopies."),
+            null);
+
+        InvokeApi(api, "AddBoolOption", null,
+            (Func<bool>)(() => Config.UseTextureGuidedPineProfile),
+            (Action<bool>)(value => Config.UseTextureGuidedPineProfile = value),
+            (Func<string>)(() => "Use detailed pine rim profile"),
+            (Func<string>)(() => "Adds texture-guided rim highlights but uses more texture samples. Off by default for better mobile performance."),
             null);
 
         InvokeApi(api, "AddNumberOption", null,
@@ -147,10 +154,10 @@ public sealed class ModEntry : Mod
             (Func<float>)(() => Config.PineRimStrength),
             (Action<float>)(value => Config.PineRimStrength = value),
             (Func<string>)(() => "Pine rim lighting"),
-            (Func<string>)(() => "Additional light along sun-facing pine-canopy edges."),
+            (Func<string>)(() => "Additional light along sun-facing pine-canopy edges when the detailed pine profile is enabled."),
             (float?)0f, (float?)3f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
-            null);
+            (Func<bool>)(() => Config.UseTextureGuidedPineProfile));
 
         Monitor.Log("Registered canopy lighting settings with Generic Mod Config Menu.", LogLevel.Info);
     }
