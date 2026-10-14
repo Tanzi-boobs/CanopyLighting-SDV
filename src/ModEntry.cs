@@ -137,7 +137,7 @@ public sealed class ModEntry : Mod
             (Action<float>)(value => Config.PineLightStrength = value),
             (Func<string>)(() => "Pine light strength"),
             (Func<string>)(() => "Brightness on lit pine-canopy pixels."),
-            (float?)0f, (float?)3f, (float?)0.05f,
+            (float?)0f, (float?)1.75f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
@@ -146,7 +146,7 @@ public sealed class ModEntry : Mod
             (Action<float>)(value => Config.PineShadowStrength = value),
             (Func<string>)(() => "Pine canopy shading"),
             (Func<string>)(() => "Darkening on back-facing pine canopy pixels only; no ground shadow is drawn."),
-            (float?)0f, (float?)3f, (float?)0.05f,
+            (float?)0f, (float?)2.5f, (float?)0.05f,
             (Func<float, string>)(value => value.ToString("0.00")),
             null);
 
@@ -212,8 +212,8 @@ public sealed class ModEntry : Mod
         Config.OverallStrength = Math.Clamp(Config.OverallStrength, 0f, 1.25f);
         Config.OakLightStrength = Math.Clamp(Config.OakLightStrength, 0f, 1.75f);
         Config.OakShadowStrength = Math.Clamp(Config.OakShadowStrength, 0f, 3f);
-        Config.PineLightStrength = Math.Clamp(Config.PineLightStrength, 0f, 3f);
-        Config.PineShadowStrength = Math.Clamp(Config.PineShadowStrength, 0f, 3f);
+        Config.PineLightStrength = Math.Clamp(Config.PineLightStrength, 0f, 1.75f);
+        Config.PineShadowStrength = Math.Clamp(Config.PineShadowStrength, 0f, 2.5f);
         Config.PineRimStrength = Math.Clamp(Config.PineRimStrength, 0f, 3f);
     }
 }
