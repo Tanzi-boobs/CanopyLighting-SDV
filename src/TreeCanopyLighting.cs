@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using StardewModdingAPI;
 
@@ -64,18 +65,70 @@ internal static class TreeCanopyLighting
     private static readonly System.Collections.Generic.Dictionary<string, object> EffectTechniques = new(StringComparer.Ordinal);
     private static readonly System.Collections.Generic.Dictionary<Type, MemberInfo?> NetFieldValueMembers = new();
     private static readonly System.Collections.Generic.Dictionary<(Type Type, string Name), MemberInfo?> MemberAccessors = new();
-    private static readonly System.Collections.Generic.List<CanopyDrawCommand> QueuedCanopies = new();
-    private static object? _queuedSpriteBatch;
-    // Capture the world-batch transform inside Tree.draw; RenderedWorld may use a
-    // different transform after the game switches render phases.
-    private static BatchState? _queuedCanopyDrawState;
-    private sealed record CanopyDrawCommand(
-        object Texture, object Position, object SourceRect, object EncodedColor,
-        float Rotation, object Origin, object Effects, bool IsPine);
+    private sealed record CanopyCacheKey(
+        object Texture, int SourceX, int SourceY, int Width, int Height,
+        bool IsPine, bool IsFlipped, int TimeOfDay);
+
+    private sealed class CanopyCacheKeyComparer : IEqualityComparer<CanopyCacheKey>
+    {
+        public bool Equals(CanopyCacheKey? x, CanopyCacheKey? y) =>
+            x is not null && y is not null
+            && ReferenceEquals(x.Texture, y.Texture)
+            && x.SourceX == y.SourceX && x.SourceY == y.SourceY
+            && x.Width == y.Width && x.Height == y.Height
+            && x.IsPine == y.IsPine && x.IsFlipped == y.IsFlipped
+            && x.TimeOfDay == y.TimeOfDay;
+
+        public int GetHashCode(CanopyCacheKey key) =>
+            HashCode.Combine(RuntimeHelpers.GetHashCode(key.Texture), key.SourceX, key.SourceY,
+                key.Width, key.Height, key.IsPine, key.IsFlipped, key.TimeOfDay);
+    }
+
+    private sealed class CanopyOverlayCacheEntry
+    {
+        public required object Texture { get; init; }
+        public required object SourceRect { get; init; }
+        public required object Origin { get; init; }
+    }
+
+    private static readonly Dictionary<CanopyCacheKey, CanopyOverlayCacheEntry> CanopyOverlayCache =
+        new(new CanopyCacheKeyComparer());
+    private static int _cachedTimeOfDay = int.MinValue;
+    private static object? _whiteColor;
+    private static object? _noSpriteEffects;
+    private static object? _flipSpriteEffects;
 
     internal static void UpdateConfig(ModConfig config)
     {
         _config = config;
+        ClearCanopyOverlayCache();
+    }
+
+    private static void ClearCanopyOverlayCache()
+    {
+        foreach (CanopyOverlayCacheEntry entry in CanopyOverlayCache.Values)
+        {
+            try
+            {
+                MethodInfo? dispose = entry.Texture.GetType().GetMethod("Dispose", Type.EmptyTypes);
+                dispose?.Invoke(entry.Texture, null);
+            }
+            catch
+            {
+                // A texture may already have been released during a graphics reset.
+            }
+        }
+
+        CanopyOverlayCache.Clear();
+    }
+
+    private static void EnsureCanopyCacheTime(int time)
+    {
+        if (_cachedTimeOfDay == time)
+            return;
+
+        ClearCanopyOverlayCache();
+        _cachedTimeOfDay = time;
     }
 
     public static void Install(ModConfig config, IMonitor monitor, string modDirectory)
@@ -146,38 +199,10 @@ internal static class TreeCanopyLighting
             BindingFlags.Static | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Couldn't find the canopy draw hook.");
 
-        Type locationType = AccessTools.TypeByName("StardewValley.GameLocation")
-            ?? throw new InvalidOperationException("Couldn't find StardewValley.GameLocation.");
-        MethodInfo? aboveFrontLayerMethod = locationType
-            .GetMethods(InstanceFlags)
-            .FirstOrDefault(method =>
-            {
-                if (method.Name != "drawAboveFrontLayer")
-                    return false;
-
-                ParameterInfo[] parameters = method.GetParameters();
-                return parameters.Length == 1
-                    && parameters[0].ParameterType.FullName == "Microsoft.Xna.Framework.Graphics.SpriteBatch";
-            });
-
-        if (aboveFrontLayerMethod is null)
-            throw new InvalidOperationException("Couldn't find GameLocation.drawAboveFrontLayer(SpriteBatch).");
-
-        MethodInfo flushPostfix = typeof(TreeCanopyLighting).GetMethod(
-            nameof(OnAboveFrontLayerDrawPostfix),
-            BindingFlags.Static | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("Couldn't find the above-front-layer flush hook.");
-
         _harmony = new Harmony(HarmonyId);
         _harmony.Patch(drawMethod, postfix: new HarmonyMethod(postfix));
-        _harmony.Patch(aboveFrontLayerMethod, postfix: new HarmonyMethod(flushPostfix));
 
-        monitor.Log("Installed canopy hooks on Tree.draw and GameLocation.drawAboveFrontLayer.", LogLevel.Info);
-    }
-
-    private static void OnAboveFrontLayerDrawPostfix()
-    {
-        RenderQueuedOverlays();
+        monitor.Log("Installed source-resolution canopy cache on Tree.draw.", LogLevel.Info);
     }
 
     private static void OnTreeDrawPostfix(object __instance, object __0)
@@ -193,29 +218,13 @@ internal static class TreeCanopyLighting
 
         try
         {
-            if (__0 is null)
-            {
-                _monitor?.Log("Canopy hook received a null SpriteBatch argument.", LogLevel.Warn);
+            if (__0 is null || _gameType is null || _viewport is null || _timeOfDay is null)
                 return;
-            }
 
-            if (_gameType is null || _viewport is null || _timeOfDay is null)
-            {
-                if (!_loggedBindingFailure)
-                {
-                    _loggedBindingFailure = true;
-                    _monitor?.Log(
-                        $"Canopy hook binding check failed: Game1={_gameType is not null}, viewport={_viewport is not null}, timeOfDay={_timeOfDay is not null}.",
-                        LogLevel.Warn);
-                }
-                return;
-            }
+            object batch = __0;
 
-            // Do not gate canopy rendering on Game1.currentLocation: some Android/Cinderbox
-            // builds expose that member differently, and Tree.draw itself already proves
-            // that this tree is currently being rendered in the active scene.
-            // Most Tree.draw calls are immature saplings. Return after reading only growthStage
-            // instead of reflecting over stump/type fields for every sapling every frame.
+            // Most Tree.draw calls are saplings. Keep that fast path before reading
+            // additional fields or touching the GPU.
             int growthStage = Convert.ToInt32(ReadNetValue(__instance, _growthStage, 0));
             if (growthStage < 5)
                 return;
@@ -226,30 +235,11 @@ internal static class TreeCanopyLighting
 
             string treeKind = Convert.ToString(ReadNetValue(__instance, _treeKind, "1")) ?? "1";
             bool isPine = treeKind == "3";
-
-            // The latest device log showed the hook running, but no mature-tree path.
-            // Log a few samples so the next run identifies which filter is blocking all trees.
-            if (_diagnosticTreeSamples < 12)
-            {
-                _diagnosticTreeSamples++;
-                _monitor?.Log(
-                    $"Tree draw sample #{_diagnosticTreeSamples}: growthStage={growthStage}, treeType={treeKind}, stump={isStump}.",
-                    LogLevel.Trace);
-            }
-
-            if (!_loggedMatureCandidate)
-            {
-                _loggedMatureCandidate = true;
-                _monitor?.Log($"Mature tree reached canopy pass (treeType={treeKind}, pine={isPine}).", LogLevel.Trace);
-            }
-
-            // Use the pine silhouette for pine trees; use the broadleaf canopy profile
-            // for every other mature vanilla/custom Wild Tree type. This covers maple,
-            // mahogany, palm, mushroom, mystic and seasonal variants too.
             if (isPine ? !_config.EnablePineCanopy : !_config.EnableOakCanopy)
                 return;
 
             int time = Convert.ToInt32(_timeOfDay.GetValue(null) ?? 1200);
+            EnsureCanopyCacheTime(time);
             float hour = time / 100f;
             float solar = GetDaylightFactor(hour);
             if (solar <= 0.001f)
@@ -262,20 +252,13 @@ internal static class TreeCanopyLighting
                 return;
 
             float treeAlpha = ReadFloatField(__instance, _alpha, 1f);
-            // Avoid a full-opacity shader overlay while vanilla is fading a chopped or shaken tree.
+            // Keep vanilla's player/chop transparency instead of covering it with opaque pixels.
             if (treeAlpha < 0.98f)
                 return;
 
             float rotation = ReadFloatField(__instance, _shakeRotation, 0f);
             object? viewport = _viewport.GetValue(null);
             if (viewport is null)
-                return;
-
-            Type rectangleType = topRect.GetType();
-            Type? vectorType = rectangleType.Assembly.GetType("Microsoft.Xna.Framework.Vector2");
-            Type? colorType = rectangleType.Assembly.GetType("Microsoft.Xna.Framework.Color");
-            Type? effectsType = rectangleType.Assembly.GetType("Microsoft.Xna.Framework.Graphics.SpriteEffects");
-            if (vectorType is null || colorType is null || effectsType is null)
                 return;
 
             int sourceX = ReadIntMember(topRect, "X");
@@ -287,9 +270,7 @@ internal static class TreeCanopyLighting
             if (sourceWidth < 2 || sourceHeight < 2 || textureWidth < 1 || textureHeight < 1)
                 return;
 
-            // Match Tree.draw's selected canopy tile, otherwise seed-ready/untouched
-            // variants and mossy canopies would receive the lighting overlay from
-            // the wrong atlas cell and appear unchanged or misaligned.
+            // Select the exact atlas variant for seed-ready, shaken and mossy trees.
             if (TryGetTreeData(treeKind, out object? treeData))
             {
                 bool hasSeed = Convert.ToBoolean(ReadNetValue(__instance, _hasSeed, false));
@@ -305,32 +286,28 @@ internal static class TreeCanopyLighting
             }
 
             bool flipped = Convert.ToBoolean(ReadNetValue(__instance, _flipped, false));
-            int left = ToChannel(sourceX / (float)textureWidth);
-            int right = ToChannel((sourceX + sourceWidth) / (float)textureWidth);
-            int top = ToChannel(sourceY / (float)textureHeight);
-            int bottom = ToChannel((sourceY + sourceHeight) / (float)textureHeight);
-
-            // The canopy shader encodes the normalized source-rectangle bounds in Color.rgba.
-            // Swapping R/B tells its shader that this sprite is horizontally flipped.
-            object encodedColor = Activator.CreateInstance(
-                colorType,
-                new object[] { (byte)(flipped ? right : left), (byte)top, (byte)(flipped ? left : right), (byte)bottom })!;
-
-            object sourceRect = Activator.CreateInstance(
-                rectangleType,
-                new object[] { sourceX, sourceY, sourceWidth, sourceHeight })!;
-
             object? tile = ReadMember(__instance, "Tile");
             if (tile is null)
                 return;
 
             float tileX = ReadFloatMember(tile, "X");
             float tileY = ReadFloatMember(tile, "Y");
+            float viewX = ReadFloatMember(viewport, "X");
+            float viewY = ReadFloatMember(viewport, "Y");
+            float drawX = tileX * 64f + 32f - viewX;
+            float drawY = tileY * 64f + 64f - viewY;
 
-            // Vanilla fades a tree when the player walks underneath/behind its canopy.
-            // The standalone overlay is rendered after the tree's original draw, so skip
-            // that one canopy in the player's fade zone instead of painting opaque lit
-            // pixels over the partially transparent vanilla sprite.
+            // Avoid shader/batch work for canopy sprites fully outside the viewport.
+            float left = drawX - sourceWidth * 0.5f * 4f;
+            float top = drawY - sourceHeight * 4f;
+            float right = left + sourceWidth * 4f;
+            float bottom = top + sourceHeight * 4f;
+            if (right <= 0f || left >= ReadFloatMember(viewport, "Width")
+                || bottom <= 0f || top >= ReadFloatMember(viewport, "Height"))
+                return;
+
+            // Vanilla fades trees when the farmer passes behind them. Preserve that
+            // behavior; don't paint an opaque overlay in the fade zone.
             object? player = ReadStaticMember(_gameType, "player");
             object? playerPosition = player is null ? null : ReadMember(player, "Position");
             if (playerPosition is not null)
@@ -339,49 +316,313 @@ internal static class TreeCanopyLighting
                 float playerY = ReadFloatMember(playerPosition, "Y") + 32f;
                 float treeCenterX = tileX * 64f + 32f;
                 float treeBaseY = tileY * 64f + 64f;
-                bool playerInCanopyFadeZone =
-                    MathF.Abs(playerX - treeCenterX) <= 56f
+                if (MathF.Abs(playerX - treeCenterX) <= 56f
                     && playerY >= treeBaseY - 192f
-                    && playerY <= treeBaseY + 48f;
-                if (playerInCanopyFadeZone)
+                    && playerY <= treeBaseY + 48f)
                     return;
             }
 
-            float viewX = ReadFloatMember(viewport, "X");
-            float viewY = ReadFloatMember(viewport, "Y");
-            object position = Activator.CreateInstance(
-                vectorType,
-                new object[] { tileX * 64f + 32f - viewX, tileY * 64f + 64f - viewY })!;
-            object origin = Activator.CreateInstance(vectorType, new object[] { 24f, 96f })!;
-            object effects = Enum.ToObject(effectsType, flipped ? 1 : 0);
+            CanopyCacheKey key = new(texture, sourceX, sourceY, sourceWidth, sourceHeight,
+                isPine, flipped, time);
 
-            object? batch = __0;
-            if (batch is null)
-                return;
-
-            // Queue the canopy data only. Ending/restarting SpriteBatch for every tree caused
-            // severe CPU overhead on Android; the queued overlays are rendered together in
-            // one batch per canopy technique at Display.RenderedWorld.
-            if (QueuedCanopies.Count == 0)
+            if (!CanopyOverlayCache.TryGetValue(key, out CanopyOverlayCacheEntry? entry))
             {
-                _queuedSpriteBatch = batch;
-                _queuedCanopyDrawState = CaptureBatchState(batch);
-            }
-            QueuedCanopies.Add(new CanopyDrawCommand(
-                texture, position, sourceRect, encodedColor, rotation, origin, effects, isPine));
+                Type rectangleType = topRect.GetType();
+                Type? colorType = rectangleType.Assembly.GetType("Microsoft.Xna.Framework.Color");
+                if (colorType is null)
+                    return;
 
+                int uvLeft = ToChannel(sourceX / (float)textureWidth);
+                int uvRight = ToChannel((sourceX + sourceWidth) / (float)textureWidth);
+                int uvTop = ToChannel(sourceY / (float)textureHeight);
+                int uvBottom = ToChannel((sourceY + sourceHeight) / (float)textureHeight);
+                object encodedColor = Activator.CreateInstance(
+                    colorType,
+                    new object[] {
+                        (byte)(flipped ? uvRight : uvLeft),
+                        (byte)uvTop,
+                        (byte)(flipped ? uvLeft : uvRight),
+                        (byte)uvBottom
+                    })!;
+                object sourceRect = Activator.CreateInstance(
+                    rectangleType,
+                    new object[] { sourceX, sourceY, sourceWidth, sourceHeight })!;
+
+                // Bake the expensive shader at native canopy resolution only when a tree
+                // texture/profile/variant/time changes. Runtime frames use a plain sprite
+                // draw in the original Tree.draw order.
+                BatchState worldState = CaptureBatchState(batch);
+                object bakedTexture = BakeCanopyOverlay(
+                    batch, worldState, texture, sourceRect, encodedColor,
+                    isPine, hour, solar, sourceWidth, sourceHeight);
+                object overlayRect = Activator.CreateInstance(
+                    rectangleType,
+                    new object[] { 0, 0, sourceWidth, sourceHeight })!;
+                Type vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2")
+                    ?? throw new InvalidOperationException("Couldn't find MonoGame's Vector2.");
+                object overlayOrigin = Activator.CreateInstance(
+                    vectorType, new object[] { sourceWidth * 0.5f, (float)sourceHeight })!;
+
+                entry = new CanopyOverlayCacheEntry
+                {
+                    Texture = bakedTexture,
+                    SourceRect = overlayRect,
+                    Origin = overlayOrigin
+                };
+                CanopyOverlayCache.Add(key, entry);
+                _monitor?.Log(
+                    $"Baked {(isPine ? "pine" : "broadleaf")} canopy overlay at {sourceWidth}x{sourceHeight}; cache variants={CanopyOverlayCache.Count}.",
+                    LogLevel.Debug);
+            }
+
+            Type? drawVectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2");
+            if (drawVectorType is null)
+                return;
+            object position = Activator.CreateInstance(drawVectorType, new object[] { drawX, drawY })!;
+            object effects = GetSpriteEffects(flipped);
+            object white = GetWhiteColor();
+            InvokeSpriteBatchDraw(
+                batch, entry.Texture, position, entry.SourceRect, white,
+                rotation, entry.Origin, 4f, effects, 0f);
+
+            if (!_loggedSuccessfulRender)
+            {
+                _loggedSuccessfulRender = true;
+                _monitor?.Log(
+                    $"Canopy shader drew its first cached overlay at {time:0000}; cache variants={CanopyOverlayCache.Count}.",
+                    LogLevel.Info);
+            }
         }
         catch (Exception ex)
         {
             _runtimeDisabled = true;
+            ClearCanopyOverlayCache();
             if (!_loggedRuntimeFailure)
             {
                 _loggedRuntimeFailure = true;
                 _monitor?.Log(
-                    "Canopy shader disabled after a render-hook error: " + ex.GetType().Name + ": " + ex.Message,
+                    "Canopy lighting disabled after cached-overlay render error: " +
+                    ex.GetType().Name + ": " + ex.Message,
                     LogLevel.Warn);
             }
         }
+    }
+
+    private static object GetWhiteColor()
+    {
+        _whiteColor ??= GetStaticMember("Microsoft.Xna.Framework.Color", "White");
+        return _whiteColor;
+    }
+
+    private static object GetSpriteEffects(bool flipped)
+    {
+        if (_noSpriteEffects is null || _flipSpriteEffects is null)
+        {
+            Type effectsType = AccessTools.TypeByName("Microsoft.Xna.Framework.Graphics.SpriteEffects")
+                ?? throw new InvalidOperationException("Couldn't find MonoGame's SpriteEffects type.");
+            _noSpriteEffects = Enum.ToObject(effectsType, 0);
+            _flipSpriteEffects = Enum.ToObject(effectsType, 1);
+        }
+
+        return flipped ? _flipSpriteEffects! : _noSpriteEffects!;
+    }
+
+    private static object BakeCanopyOverlay(
+        object batch,
+        BatchState worldState,
+        object sourceTexture,
+        object sourceRect,
+        object encodedColor,
+        bool isPine,
+        float hour,
+        float solar,
+        int width,
+        int height)
+    {
+        EnsureEffectLoaded();
+
+        object? graphicsManager = _gameType is null ? null : ReadStaticMember(_gameType, "graphics");
+        object? graphicsDevice = graphicsManager is null ? null : ReadMember(graphicsManager, "GraphicsDevice");
+        if (graphicsDevice is null)
+            throw new InvalidOperationException("The game's GraphicsDevice isn't available for canopy baking.");
+
+        Type renderTargetType = AccessTools.TypeByName("Microsoft.Xna.Framework.Graphics.RenderTarget2D")
+            ?? throw new InvalidOperationException("Couldn't find MonoGame's RenderTarget2D.");
+        object renderTarget = Activator.CreateInstance(renderTargetType, new object[] { graphicsDevice, width, height })
+            ?? throw new InvalidOperationException("Couldn't create the canopy overlay RenderTarget2D.");
+
+        object? oldViewport = ReadMember(graphicsDevice, "Viewport");
+        object? oldRenderTargets = GetRenderTargets(graphicsDevice);
+        bool worldBatchEnded = false;
+        bool targetChanged = false;
+        bool batchOpen = false;
+
+        try
+        {
+            worldBatchEnded = true;
+            InvokeSpriteBatchEnd(batch);
+
+            SetRenderTarget(graphicsDevice, renderTarget);
+            targetChanged = true;
+            ClearRenderTarget(graphicsDevice);
+
+            object identity = GetStaticMember("Microsoft.Xna.Framework.Matrix", "Identity");
+            BatchState bakeState = new()
+            {
+                SortMode = worldState.SortMode,
+                BlendState = GetStaticMember("Microsoft.Xna.Framework.Graphics.BlendState", "Opaque"),
+                SamplerState = worldState.SamplerState,
+                DepthStencilState = worldState.DepthStencilState,
+                RasterizerState = worldState.RasterizerState,
+                Effect = _effect,
+                TransformMatrix = identity
+            };
+
+            SetCanopyParameters(isPine, hour, solar);
+            object effectTransform = CreateEffectTransform(batch, bakeState);
+            SetEffectParameter("MatrixTransform", effectTransform);
+
+            InvokeSpriteBatchBegin(
+                batch,
+                bakeState.SortMode,
+                bakeState.BlendState,
+                bakeState.SamplerState,
+                bakeState.DepthStencilState,
+                bakeState.RasterizerState,
+                _effect,
+                bakeState.TransformMatrix);
+            batchOpen = true;
+
+            Type vectorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Vector2")
+                ?? throw new InvalidOperationException("Couldn't find MonoGame's Vector2.");
+            object centerBottom = Activator.CreateInstance(
+                vectorType, new object[] { width * 0.5f, (float)height })!;
+            object noEffects = GetSpriteEffects(false);
+            InvokeSpriteBatchDraw(
+                batch, sourceTexture, centerBottom, sourceRect, encodedColor,
+                0f, centerBottom, 1f, noEffects, 0f);
+
+            InvokeSpriteBatchEnd(batch);
+            batchOpen = false;
+
+            RestoreRenderTargets(graphicsDevice, oldRenderTargets, oldViewport);
+            targetChanged = false;
+
+            BeginRestoredBatch(batch, worldState);
+            worldBatchEnded = false;
+
+            return renderTarget;
+        }
+        catch
+        {
+            if (batchOpen)
+            {
+                try { InvokeSpriteBatchEnd(batch); } catch { }
+                batchOpen = false;
+            }
+
+            if (targetChanged)
+            {
+                try { RestoreRenderTargets(graphicsDevice, oldRenderTargets, oldViewport); } catch { }
+                targetChanged = false;
+            }
+
+            if (worldBatchEnded)
+            {
+                try { BeginRestoredBatch(batch, worldState); } catch { }
+            }
+
+            try
+            {
+                MethodInfo? dispose = renderTarget.GetType().GetMethod("Dispose", Type.EmptyTypes);
+                dispose?.Invoke(renderTarget, null);
+            }
+            catch { }
+
+            throw;
+        }
+    }
+
+    private static object? GetRenderTargets(object graphicsDevice)
+    {
+        MethodInfo? method = graphicsDevice.GetType().GetMethod(
+            "GetRenderTargets", BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
+        try
+        {
+            return method?.Invoke(graphicsDevice, null);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void SetRenderTarget(object graphicsDevice, object? target)
+    {
+        Type renderTargetType = AccessTools.TypeByName("Microsoft.Xna.Framework.Graphics.RenderTarget2D")
+            ?? throw new InvalidOperationException("Couldn't find MonoGame's RenderTarget2D.");
+        MethodInfo? method = graphicsDevice.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(candidate =>
+            {
+                if (candidate.Name != "SetRenderTarget")
+                    return false;
+                ParameterInfo[] parameters = candidate.GetParameters();
+                return parameters.Length == 1 && parameters[0].ParameterType == renderTargetType;
+            });
+        if (method is null)
+            throw new MissingMethodException("Couldn't find GraphicsDevice.SetRenderTarget(RenderTarget2D).");
+
+        InvokeRenderMethod(method, graphicsDevice, new object?[] { target }, "GraphicsDevice.SetRenderTarget");
+    }
+
+    private static void RestoreRenderTargets(object graphicsDevice, object? renderTargets, object? oldViewport)
+    {
+        bool restored = false;
+        if (renderTargets is Array targets && targets.Length > 0)
+        {
+            MethodInfo? setMany = graphicsDevice.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(candidate =>
+                {
+                    if (candidate.Name != "SetRenderTargets")
+                        return false;
+                    ParameterInfo[] parameters = candidate.GetParameters();
+                    return parameters.Length == 1 && parameters[0].ParameterType.IsInstanceOfType(renderTargets);
+                });
+            if (setMany is not null)
+            {
+                InvokeRenderMethod(setMany, graphicsDevice, new[] { renderTargets }, "GraphicsDevice.SetRenderTargets");
+                restored = true;
+            }
+        }
+
+        if (!restored)
+            SetRenderTarget(graphicsDevice, null);
+
+        if (oldViewport is not null)
+        {
+            PropertyInfo? viewportProperty = AccessTools.Property(graphicsDevice.GetType(), "Viewport");
+            if (viewportProperty?.CanWrite == true)
+                viewportProperty.SetValue(graphicsDevice, oldViewport);
+        }
+    }
+
+    private static void ClearRenderTarget(object graphicsDevice)
+    {
+        Type colorType = AccessTools.TypeByName("Microsoft.Xna.Framework.Color")
+            ?? throw new InvalidOperationException("Couldn't find MonoGame's Color type.");
+        MethodInfo? clear = graphicsDevice.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(candidate =>
+            {
+                if (candidate.Name != "Clear")
+                    return false;
+                ParameterInfo[] parameters = candidate.GetParameters();
+                return parameters.Length == 1 && parameters[0].ParameterType == colorType;
+            });
+        if (clear is null)
+            throw new MissingMethodException("Couldn't find GraphicsDevice.Clear(Color).");
+
+        object transparent = GetStaticMember("Microsoft.Xna.Framework.Color", "Transparent");
+        InvokeRenderMethod(clear, graphicsDevice, new[] { transparent }, "GraphicsDevice.Clear");
     }
 
     private static bool TryGetTreeData(string treeId, out object? data)
@@ -474,139 +715,6 @@ internal static class TreeCanopyLighting
                 : Math.Clamp(_config.OakShadowStrength, 0f, 3f);
             SetFloat("TreeCanopyLightStrength", light * strength);
             SetFloat("TreeCanopyShadowStrength", shadow * strength);
-        }
-    }
-
-    internal static void RenderQueuedOverlays()
-    {
-        if (QueuedCanopies.Count == 0)
-        {
-            _queuedSpriteBatch = null;
-            _queuedCanopyDrawState = null;
-            return;
-        }
-
-        CanopyDrawCommand[] pending = QueuedCanopies.ToArray();
-        QueuedCanopies.Clear();
-        object? batch = _queuedSpriteBatch;
-        BatchState? queuedDrawState = _queuedCanopyDrawState;
-        _queuedSpriteBatch = null;
-        _queuedCanopyDrawState = null;
-        if (batch is null)
-        {
-            _monitor?.Log("Skipping queued canopy overlays because the SpriteBatch reference was unavailable.", LogLevel.Warn);
-            return;
-        }
-
-        if (_runtimeDisabled || _config is null || !_config.Enabled || _config.OverallStrength <= 0.001f)
-            return;
-
-        int time = Convert.ToInt32(_timeOfDay?.GetValue(null) ?? 1200);
-        float hour = time / 100f;
-        float solar = GetDaylightFactor(hour);
-        if (solar <= 0.001f)
-            return;
-
-        BatchState? restoreState = null;
-        bool batchOpen = false;
-        try
-        {
-            EnsureEffectLoaded();
-            // Keep the event-time state only for restoration. Shader positioning must use
-            // the matrix captured when the original tree was actually drawn.
-            restoreState = CaptureBatchState(batch);
-            batchOpen = true;
-            BatchState shaderState = queuedDrawState ?? restoreState;
-            object effectTransform = CreateEffectTransform(batch, shaderState);
-
-            // Flush the world's existing sprites once, then draw each shader technique
-            // as a group. This avoids four SpriteBatch state transitions per mature tree.
-            InvokeSpriteBatchEnd(batch);
-            batchOpen = false;
-
-            for (int group = 0; group < 2; group++)
-            {
-                bool pine = group == 1;
-                bool hasCanopies = pending.Any(item => item.IsPine == pine);
-                if (!hasCanopies)
-                    continue;
-
-                SetCanopyParameters(pine, hour, solar);
-                SetEffectParameter("MatrixTransform", effectTransform);
-
-                InvokeSpriteBatchBegin(
-                    batch,
-                    shaderState.SortMode,
-                    shaderState.BlendState,
-                    shaderState.SamplerState,
-                    shaderState.DepthStencilState,
-                    shaderState.RasterizerState,
-                    _effect,
-                    shaderState.TransformMatrix);
-                batchOpen = true;
-
-                foreach (CanopyDrawCommand item in pending)
-                {
-                    if (item.IsPine != pine)
-                        continue;
-
-                    InvokeSpriteBatchDraw(
-                        batch, item.Texture, item.Position, item.SourceRect, item.EncodedColor,
-                        item.Rotation, item.Origin, 4f, item.Effects, 0f);
-                }
-
-                InvokeSpriteBatchEnd(batch);
-                batchOpen = false;
-            }
-
-            BeginRestoredBatch(batch, restoreState);
-            batchOpen = true;
-
-            if (!_loggedSuccessfulRender)
-            {
-                _loggedSuccessfulRender = true;
-                _monitor?.Log($"Canopy shader rendered its first batched overlay pass at {time:0000}; queued={pending.Length}.", LogLevel.Info);
-            }
-        }
-        catch (Exception ex)
-        {
-            if (batchOpen)
-            {
-                try
-                {
-                    InvokeSpriteBatchEnd(batch);
-                    batchOpen = false;
-                }
-                catch
-                {
-                    // The batch may already have been closed by a failed End invocation.
-                }
-            }
-
-            if (!batchOpen && restoreState is not null)
-            {
-                try
-                {
-                    BeginRestoredBatch(batch, restoreState);
-                    batchOpen = true;
-                }
-                catch (Exception restoreException)
-                {
-                    _monitor?.Log(
-                        "Couldn't restore SpriteBatch after batched canopy rendering: " +
-                        restoreException.GetType().Name + ": " + restoreException.Message,
-                        LogLevel.Error);
-                }
-            }
-
-            _runtimeDisabled = true;
-            if (!_loggedRuntimeFailure)
-            {
-                _loggedRuntimeFailure = true;
-                _monitor?.Log(
-                    "Batched canopy rendering disabled after an error: " + ex.GetType().Name + ": " + ex.Message,
-                    LogLevel.Warn);
-            }
         }
     }
 
