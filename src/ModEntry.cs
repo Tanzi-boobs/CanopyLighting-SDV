@@ -24,14 +24,19 @@ public sealed class ModEntry : Mod
             return;
         }
 
-        try
+        // SMAPI explicitly requires mod-provided API calls to happen after all mods initialize.
+        // GameLaunched is the safe point for retrieving and registering the optional GMCM API.
+        helper.Events.GameLoop.GameLaunched += (_, _) =>
         {
-            RegisterConfigMenu(helper);
-        }
-        catch (Exception ex)
-        {
-            Monitor.Log("Canopy Lighting is active, but GMCM options couldn't be registered: " + ex.GetType().Name + ": " + ex.Message, LogLevel.Warn);
-        }
+            try
+            {
+                RegisterConfigMenu(helper);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log("Canopy Lighting is active, but GMCM options couldn't be registered: " + ex.GetType().Name + ": " + ex.Message, LogLevel.Warn);
+            }
+        };
 
         Monitor.Log(
             $"Canopy Lighting enabled={Config.Enabled}, strength={Config.OverallStrength:0.00}, broadleaf/other={Config.EnableOakCanopy}, pine={Config.EnablePineCanopy}.",
