@@ -1,10 +1,12 @@
 # Canopy Lighting
 
-A standalone Stardew Valley 1.6 SMAPI mod for directional lighting on mature wild-tree canopies, based on the canopy techniques supplied with Dynamic Shader. Dynamic Shader is not required at runtime.
+A standalone Stardew Valley 1.6 SMAPI mod for directional lighting on mature wild-tree canopies, based on the canopy techniques supplied by Dynamic Shader. Dynamic Shader is not required at runtime.
 
-## Current release
+## Current candidate: 0.4.16
 
-Version 0.4.15 retains the Dynamic Shader compiled `ShadowEffect.mgfxo` canopy techniques and batches overlays to avoid SpriteBatch restarts for every mature tree. It fixes an Android compatibility issue in 0.4.14: it no longer references `RenderedWorldEventArgs.SpriteBatch`, which is missing in the user's SMAPI Android build. Instead, the SpriteBatch instance observed by the existing `Tree.draw` hook is retained and used at `RenderedWorld`.
+This candidate retains the bundled Dynamic Shader `ShadowEffect.mgfxo` canopy techniques and groups canopy overlays to avoid restarting SpriteBatch for every tree. It captures the world transform during `Tree.draw` and uses that transform for overlay coordinates while restoring the event-time batch state afterward. This addresses a likely cause of invisible or misplaced overlays in the Cinderbox test.
+
+The dawn intensity curve has also been adjusted: full daylight strength is reached shortly after 6:00 instead of 7:00. This should make the canopy lighting easier to observe during the user's frozen-6:00 test. It remains a hypothesis until visually verified in Cinderbox.
 
 ## Visual behavior
 
@@ -15,7 +17,7 @@ Version 0.4.15 retains the Dynamic Shader compiled `ShadowEffect.mgfxo` canopy t
 
 ## Rendering note
 
-The grouped pass draws canopy overlays after the world draw and before the HUD. This reduces per-tree batch switches, but it may change the overlap order where a canopy crosses characters, buildings, or other tree canopies. Verify visual layering and FPS in-game. CI verifies compilation only.
+The grouped pass draws canopy overlays after the world draw and before the HUD. This reduces per-tree batch switches, but may change overlap order where a canopy crosses characters, buildings, or other tree canopies. Check visual layering and FPS in-game. CI verifies compilation only.
 
 ## Install
 
