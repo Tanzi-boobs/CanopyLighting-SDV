@@ -1,26 +1,22 @@
-# Canopy Lighting
+# Double Tap HUD 0.2.1
 
-A standalone Stardew Valley 1.6 SMAPI mod for directional lighting on mature wild-tree canopies, based on the canopy techniques supplied with Dynamic Shader. Dynamic Shader is not required at runtime.
+Standalone SMAPI mod for Stardew Valley 1.6, targeting the desktop-style HUD on Cinderbox/Android.
 
-## Current release
+## Installable build
+This project must be compiled; a source ZIP alone is not installable. The CI workflow packages DoubleTapHUD.dll, manifest.json, and config.json into an installable Mods/DoubleTapHUD folder.
 
-Version 0.4.12 uses the same compiled `ShadowEffect.mgfxo` supplied by the user, selecting only `TreeCanopyLight` and `TextureGuidedPineCanopyLight`. The shader asset in the personal-use ZIP has been verified byte-for-byte against the supplied Dynamic Shader archive. This release changes the SpriteBatch invocation path to use reflected overloads instead of dynamic binding, addressing the `Matrix?` overload error recorded in the user's SMAPI log.
+## Gestures
+- Double-tap the upper-right date/time panel to open the main game menu (Inventory).
+- Double-tap the HUD quest icon to open Quest Log.
+- Double-tap the Map or Crafting tab to switch to that page.
+- Double-tap an active crafting recipe to craft it. The first tap is suppressed; the second is handed to the normal game or Better Crafting click handler.
+- Double-tap empty map space to return to the previously open game-menu tab. Map location markers, the tabs, and the close button keep their normal behavior.
 
-## Visual behavior
+## Crafting compatibility
+The mod does not create items or consume ingredients itself. It identifies vanilla CraftingPage recipe buttons and Better Crafting live ComponentRecipes / RecipeComponents button mappings through reflection, without a hard dependency on Better Crafting. Other mods that replace the entire crafting screen with an unrelated custom UI are not guaranteed to expose a compatible recipe-button map.
 
-- Broadleaf technique on mature non-pine trees; pine-specific technique on mature pine trees.
-- Canopy pixels only; no added ground-shadow sprite. Vanilla circular shadows are unchanged.
-- GMCM options include effect enable, overall strength, broadleaf strengths and pine strengths.
-- The mod loads `assets/shaders/ShadowEffect.mgfxo` from its own folder; Dynamic Shader is not a runtime dependency.
+## Configuration
+config.json options: DoubleTapWindowMilliseconds (180-900; default 420), MaxTapDistance (16-160; default 72), and booleans for the clock, quest icon, Map tab, Crafting tab, crafting recipes, and blank-map close.
 
-## Install
-
-Extract the complete `CanopyLighting` folder into `Mods`. Keep the shader file in `assets/shaders/ShadowEffect.mgfxo`.
-
-The personal-use ZIP includes the compiled shader supplied by the user. That binary is intentionally not committed to this public repository; GitHub Actions produces a DLL-only validation artifact.
-
-## Verification status
-
-GitHub Actions run #142 compiled the current C# source successfully. This verifies compilation only, not live rendering. In the next in-game test, check whether `Canopy shader drew its first overlay` is logged and whether any new SpriteBatch exception occurs. Visual appearance must be confirmed in Cinderbox before the shader parameters are tuned further.
-
-[Build run #141](https://github.com/Tanzi-boobs/CanopyLighting-SDV/actions/runs/38532636599)
+## Testing status
+Compile validation is run in GitHub Actions. Runtime behavior still needs Cinderbox testing because input event routing can differ between Android/desktop mode and installed UI mods.

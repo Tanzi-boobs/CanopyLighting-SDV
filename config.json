@@ -1,11 +1,10 @@
 {
-  "Enabled": true,
-  "OverallStrength": 1.0,
-  "EnableOakCanopy": true,
-  "EnablePineCanopy": true,
-  "OakLightStrength": 1.54,
-  "OakShadowStrength": 2.97,
-  "PineLightStrength": 3.0,
-  "PineShadowStrength": 2.02,
-  "PineRimStrength": 2.67
+  "DoubleTapWindowMilliseconds": 420,
+  "MaxTapDistance": 72,
+  "ClockOpensGameMenu": true,
+  "DoubleTapQuestButton": true,
+  "DoubleTapMapTab": true,
+  "DoubleTapCraftingTab": true,
+  "DoubleTapCraftingRecipes": true,
+  "DoubleTapBlankMapToClose": true
 }

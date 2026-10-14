@@ -1,10 +1,8 @@
-name: Build Canopy Lighting
+name: Build Double Tap HUD
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches: [ double-tap-hud-build ]
   workflow_dispatch:
 
 permissions:
@@ -15,21 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 6.0.x
-
       - name: Build compile-only SMAPI API shim
         run: dotnet build ci/SmapiStub/SmapiStub.csproj --configuration Release
-
       - name: Build mod
-        run: dotnet build CanopyLighting.csproj --configuration Release
-
-      # The compiled shader stays out of this public repository.
-      # CI therefore publishes only the DLL for validation; this is not an installable mod ZIP.
+        run: dotnet build DoubleTapHUD.csproj --configuration Release
+      - name: Package installable mod
+        run: |
+          mkdir -p artifact/DoubleTapHUD
+          cp bin/Release/net6.0/DoubleTapHUD.dll manifest.json config.json README.md artifact/DoubleTapHUD/
+          cd artifact
+          zip -qr DoubleTapHUD-0.2.1-installable.zip DoubleTapHUD
       - uses: actions/upload-artifact@v4
         with:
-          name: CanopyLighting-DLL-validation-only
-          path: bin/Release/net6.0/CanopyLighting.dll
+          name: DoubleTapHUD-0.2.1-installable
+          path: artifact/DoubleTapHUD-0.2.1-installable.zip
           if-no-files-found: error

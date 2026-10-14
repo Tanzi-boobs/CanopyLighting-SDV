@@ -1,9 +1,9 @@
 {
-  "Name": "Canopy Lighting",
+  "Name": "Double Tap HUD",
   "Author": "Tanzi",
-  "Version": "0.4.12",
-  "Description": "Standalone canopy-only lighting for mature wild trees, with GMCM settings and no added ground shadows.",
-  "UniqueID": "Tanzi.CanopyLighting",
-  "EntryDll": "CanopyLighting.dll",
+  "Version": "0.2.1",
+  "Description": "Require double taps for HUD navigation and crafting recipes; double-tap blank map space to return to the previous tab.",
+  "UniqueID": "Tanzi.DoubleTapHUD",
+  "EntryDll": "DoubleTapHUD.dll",
   "MinimumApiVersion": "4.0.0"
 }

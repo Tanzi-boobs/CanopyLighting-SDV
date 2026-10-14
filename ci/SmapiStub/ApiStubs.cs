@@ -1,53 +1,37 @@
-using StardewModdingAPI.Events;
-
-namespace StardewModdingAPI;
-
-public enum LogLevel
+// Compile-only API shim. The output mod DLL must run with the real SMAPI assembly.
+namespace StardewModdingAPI
 {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-    Alert
-}
-
-public interface IManifest
-{
-}
-
-public interface IModRegistry
-{
-    object? GetApi(string uniqueID);
-    T? GetApi<T>(string uniqueID) where T : class;
-}
-
-public interface IMonitor
-{
-    void Log(string message, LogLevel level = LogLevel.Info);
-}
-
-public interface IModHelper
-{
-    string DirectoryPath { get; }
-    IModRegistry ModRegistry { get; }
-    IModEvents Events { get; }
-    T ReadConfig<T>() where T : new();
-    void WriteConfig<T>(T config);
-}
-
-public abstract class Mod
-{
-    protected IMonitor Monitor { get; } = new NullMonitor();
-    protected IManifest ModManifest { get; } = new NullManifest();
-    public abstract void Entry(IModHelper helper);
-
-    private sealed class NullMonitor : IMonitor
+    public abstract class Mod
     {
-        public void Log(string message, LogLevel level = LogLevel.Info) { }
+        protected IModHelper Helper { get; private set; } = null!;
+        protected IMonitor Monitor { get; private set; } = null!;
+        public abstract void Entry(IModHelper helper);
     }
 
-    private sealed class NullManifest : IManifest
+    public interface IModHelper
     {
+        T ReadConfig<T>() where T : class, new();
+        void WriteConfig<T>(T config);
+        IModEvents Events { get; }
+    }
+
+    public interface IModEvents { IInputEvents Input { get; } }
+    public interface IInputEvents
+    {
+        event EventHandler<StardewModdingAPI.Events.ButtonPressedEventArgs> ButtonPressed;
+    }
+
+    public interface IMonitor { void Log(string message, LogLevel level = LogLevel.Debug); }
+
+    public enum LogLevel { Trace, Debug, Info, Warn, Error, Alert }
+    public enum SButton { MouseLeft }
+}
+
+namespace StardewModdingAPI.Events
+{
+    public sealed class ButtonPressedEventArgs : EventArgs
+    {
+        public StardewModdingAPI.SButton Button { get; set; }
+        public void Suppress() { }
     }
 }

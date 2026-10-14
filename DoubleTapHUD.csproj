@@ -1,18 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <RootNamespace>CanopyLighting</RootNamespace>
-    <AssemblyName>CanopyLighting</AssemblyName>
-    <Version>0.4.12</Version>
+    <RootNamespace>DoubleTapHUD</RootNamespace>
+    <AssemblyName>DoubleTapHUD</AssemblyName>
+    <Version>0.2.1</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Lib.Harmony" Version="2.3.3" />
     <Reference Include="StardewModdingAPI">
       <HintPath>ci/SmapiStub/bin/Release/net6.0/StardewModdingAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Compile Remove="ci/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
