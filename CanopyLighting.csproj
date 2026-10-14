@@ -3,7 +3,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <RootNamespace>CanopyLighting</RootNamespace>
     <AssemblyName>CanopyLighting</AssemblyName>
-    <Version>0.4.13</Version>
+    <Version>0.4.14</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
