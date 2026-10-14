@@ -202,11 +202,11 @@ public sealed class ModEntry : Mod
 
     private void ClampConfig()
     {
-        Config.OverallStrength = Math.Clamp(Config.OverallStrength, 0f, 2f);
-        Config.OakLightStrength = Math.Clamp(Config.OakLightStrength, 0f, 5f);
+        Config.OverallStrength = Math.Clamp(Config.OverallStrength, 0f, 1.25f);
+        Config.OakLightStrength = Math.Clamp(Config.OakLightStrength, 0f, 1.75f);
         Config.OakShadowStrength = Math.Clamp(Config.OakShadowStrength, 0f, 3f);
-        Config.PineLightStrength = Math.Clamp(Config.PineLightStrength, 0f, 5f);
-        Config.PineShadowStrength = Math.Clamp(Config.PineShadowStrength, 0f, 5f);
-        Config.PineRimStrength = Math.Clamp(Config.PineRimStrength, 0f, 5f);
+        Config.PineLightStrength = Math.Clamp(Config.PineLightStrength, 0f, 3f);
+        Config.PineShadowStrength = Math.Clamp(Config.PineShadowStrength, 0f, 3f);
+        Config.PineRimStrength = Math.Clamp(Config.PineRimStrength, 0f, 3f);
     }
 }
