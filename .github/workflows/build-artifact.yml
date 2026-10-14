@@ -1,0 +1,33 @@
+name: Build Double Tap HUD installable artifact
+
+on:
+  push:
+    branches: [ doubletap-build-artifact ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+      - name: Build compile-only SMAPI API shim
+        run: dotnet build ci/SmapiStub/SmapiStub.csproj --configuration Release
+      - name: Build mod
+        run: dotnet build DoubleTapHUD.csproj --configuration Release
+      - name: Package installable mod
+        run: |
+          mkdir -p artifact/DoubleTapHUD
+          cp bin/Release/net6.0/DoubleTapHUD.dll manifest.json config.json README.md artifact/DoubleTapHUD/
+          cd artifact
+          zip -qr DoubleTapHUD-0.2.1-installable.zip DoubleTapHUD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DoubleTapHUD-0.2.1-installable
+          path: artifact/DoubleTapHUD-0.2.1-installable.zip
+          if-no-files-found: error
