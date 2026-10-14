@@ -948,8 +948,8 @@ internal static class TreeCanopyLighting
 
     private static float GetDaylightFactor(float hour)
     {
-        // Begin gradually at dawn so the effect is already visible at the game's 6:00 start.
-        float sunrise = SmoothStep(5.5f, 7.0f, hour);
+        // Bring the canopy lighting up by around 6:12; the old 7:00 endpoint made it barely visible at 6:00.
+        float sunrise = SmoothStep(5.5f, 6.2f, hour);
         float sunset = 1f - SmoothStep(16.5f, 18.2f, hour);
         return Math.Clamp(sunrise * sunset, 0f, 1f);
     }
